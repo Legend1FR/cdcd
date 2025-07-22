@@ -152,15 +152,8 @@ async function tradeInGMGNBot(client, token) {
             done = true;
             // طباعة السعر فقط بدون باقي الرسالة وبدون علامة الدولار
             console.log('📩 السعر من GMGN: ' + priceMatch[1]);
-            // حساب السعر الجديد حسب القانون المطلوب
-            let newPrice;
-            if (/^\d+(\.\d+)?$/.test(priceMatch[1])) {
-              // إذا كان السعر مثل 7 أو 7.5 بدون أصفار
-              newPrice = '0.00' + priceMatch[1]; // إضافة ثلاث أصفار على اليسار
-            } else {
-              // إذا كان السعر فيه أصفار على اليسار
-              newPrice = (price * 10).toFixed(6);
-            }
+            // حساب السعر الجديد بزيادة 1000%
+            const newPrice = (price * 10).toFixed(6);
             // إرسال أمر التداول
             const orderMsg = `/create limitbuy ${token} 0.5@${newPrice} -exp 86400`;
             await client.sendMessage(botUsername, { message: orderMsg });
@@ -184,15 +177,8 @@ async function tradeInGMGNBot(client, token) {
       console.log('📩 رد البوت بعد ارسال التوكن:\n' + (lastBotMessage || 'لم يتم استقبال أي رسالة من البوت بعد إرسال التوكن'));
       return;
     }
-    // حساب السعر الجديد حسب القانون المطلوب
-    let newPrice;
-    if (/^\d+(\.\d+)?$/.test(priceMatch[1])) {
-      // إذا كان السعر مثل 7 أو 7.5 بدون أصفار
-      newPrice = '0.00' + priceMatch[1]; // إضافة ثلاث أصفار على اليسار
-    } else {
-      // إذا كان السعر فيه أصفار على اليسار
-      newPrice = (price * 10).toFixed(6);
-    }
+    // حساب السعر الجديد بزيادة 1000%
+    const newPrice = (price * 10).toFixed(6);
     // إرسال أمر التداول
     const orderMsg = `/create limitbuy ${token} 0.5@${newPrice} -exp 86400`;
     await client.sendMessage(botUsername, { message: orderMsg });
