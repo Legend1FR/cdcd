@@ -220,7 +220,7 @@ http.createServer((req, res) => {
   console.log(`🌐 HTTP Server running on port ${PORT}`);
 });
 
-const KEEP_ALIVE_URL = " ";
+const KEEP_ALIVE_URL = "https://cdcd.onrender.com/";
 setInterval(() => {
   https.get(KEEP_ALIVE_URL, (res) => {
     console.log(`🔄 Keep Alive Ping: ${KEEP_ALIVE_URL} - Status: ${res.statusCode}`);
