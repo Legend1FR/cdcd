@@ -127,62 +127,10 @@ async function tradeInGMGNBot(client, token) {
       fs.writeFileSync(lastStartFile, new Date().toISOString().slice(0, 10));
       await sleep(2000);
     }
-    // إرسال التوكن
-    await client.sendMessage(botUsername, { message: token });
-    await sleep(3000);
-
-    // استقبال رسائل البوت وطباعة كل رسالة والبحث عن السعر
-    let price = null;
-    let done = false;
-    let lastBotMessage = null;
-    const handler = async (update) => {
-      // تحقق من أن الرسالة من بوت GMGN بناءً على اسم المستخدم أو peerId
-      if (update.message && update.message.peerId && (
-            (update.message.peerId.userId && update.message.peerId.userId.toString().includes('GMGN')) ||
-            (update.message.peerId.channelId && botUsername.includes('GMGN'))
-          )) {
-        const text = update.message.message;
-        lastBotMessage = text;
-        // تحقق أن الرسالة تحتوي على التوكن المطلوب
-        if (text.includes(token)) {
-          // استخراج السعر من الرسالة
-          let priceMatch = text.match(/price:\s*\$?([\d\.]+)/i);
-          if (priceMatch && priceMatch[1]) {
-            price = parseFloat(priceMatch[1]);
-            done = true;
-            // طباعة السعر فقط بدون باقي الرسالة وبدون علامة الدولار
-            console.log('📩 السعر من GMGN: ' + priceMatch[1]);
-            // حساب السعر الجديد بزيادة 1000%
-            const newPrice = (price * 10).toFixed(6);
-            // إرسال أمر التداول
-            const orderMsg = `/create limitbuy ${token} 0.5@${newPrice} -exp 86400`;
-            await client.sendMessage(botUsername, { message: orderMsg });
-            console.log('✅ تم إرسال أمر التداول:', orderMsg);
-          } else {
-            // إذا لم يوجد سعر، اطبع الرسالة كاملة
-            console.log('📩 رسالة من GMGN:\n' + text);
-          }
-        }
-      }
-    };
-    client.addEventHandler(handler);
-    // انتظر حتى يتم استقبال السعر أو انتهاء المهلة
-    let tries = 0;
-    while (!done && tries < 10) {
-      await sleep(1000);
-      tries++;
-    }
-    client.removeEventHandler(handler);
-    if (!price) {
-      console.log('📩 رد البوت بعد ارسال التوكن:\n' + (lastBotMessage || 'لم يتم استقبال أي رسالة من البوت بعد إرسال التوكن'));
-      return;
-    }
-    // حساب السعر الجديد بزيادة 1000%
-    const newPrice = (price * 10).toFixed(6);
-    // إرسال أمر التداول
-    const orderMsg = `/create limitbuy ${token} 0.5@${newPrice} -exp 86400`;
+    // إرسال أمر الشراء مباشرة بدون إرسال التوكن لوحده
+    const orderMsg = `/create limitbuy ${token} 0.5@60.000000 -exp 86400`;
     await client.sendMessage(botUsername, { message: orderMsg });
-    console.log('✅ تم إرسال أمر التداول:', orderMsg);
+    console.log('✅ تم إرسال أمر الشراء مباشرة:', orderMsg);
   } catch (err) {
     console.error('❌ خطأ في التداول مع GMGN:', err.message);
   }
