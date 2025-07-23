@@ -157,18 +157,24 @@ async function tradeInGMGNBot(client, token) {
             // إعداد أمر التداول
             const orderMsg = `/create limitbuy ${token} 0.5@${newPrice} -exp 86400`;
             // طباعة الأمر في الكونسول وتخزينه مؤقتًا
-            console.log('⏳ سيتم إرسال أمر التداول بعد 5 دقائق:', orderMsg);
-            // تخزين الأمر في ملف مؤقت (اختياري)
+            console.log('⏳ سيتم إرسال أمر التداول بعد 5 دقائق (إذا كان السعر أقل من 1 دولار):', orderMsg);
             fs.writeFileSync('pending_order.txt', orderMsg, 'utf8');
-            // إرسال الأمر بعد 5 دقائق
+            // إرسال الأمر بعد 5 دقائق مع التحقق من السعر
             setTimeout(async () => {
               try {
-                await client.sendMessage(botUsername, { message: orderMsg });
-                console.log('✅ تم إرسال أمر التداول بعد 5 دقائق:', orderMsg);
-                // حذف الملف المؤقت بعد الإرسال
+                // استخراج السعر بعد @
+                const priceMatch = orderMsg.match(/@(\d+\.\d{1,6})/);
+                let extractedPrice = priceMatch ? parseFloat(priceMatch[1]) : null;
+                if (extractedPrice !== null && extractedPrice < 1) {
+                  await client.sendMessage(botUsername, { message: orderMsg });
+                  console.log('✅ تم إرسال أمر التداول بعد 5 دقائق (السعر أقل من 1 دولار):', orderMsg);
+                } else {
+                  console.log('❌ تم إلغاء أمر التداول: السعر بعد @ أكبر أو يساوي 1 دولار ولن يتم الإرسال.');
+                }
+                // حذف الملف المؤقت بعد الإرسال أو الإلغاء
                 fs.unlinkSync('pending_order.txt');
               } catch (err) {
-                console.error('❌ خطأ أثناء إرسال أمر التداول بعد 5 دقائق:', err.message);
+                console.error('❌ خطأ أثناء معالجة أمر التداول بعد 5 دقائق:', err.message);
               }
             }, 5 * 60 * 1000); // 5 دقائق
             done = true;
