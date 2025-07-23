@@ -5,7 +5,7 @@ const input = require("input");
 const http = require("http");
 const https = require("https");
 
-// بيانات الدخول تلقائية للسيرفر
+
 const PHONE_NUMBER = "+966XXXXXXXXX"; // ضع رقمك هنا
 const PASSWORD = "YOUR_PASSWORD"; // إذا كان لديك كلمة مرور 2FA
 const PHONE_CODE = undefined; // يمكن تركه undefined ليتم تجاهله
