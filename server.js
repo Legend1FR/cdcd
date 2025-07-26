@@ -92,6 +92,77 @@ http.createServer((req, res) => {
   console.log(`🌐 HTTP Server running on port ${PORT}`);
 });
 
+// إضافة مسار جديد لعرض واجهة ملفات التكوين
+http.createServer((req, res) => {
+  if (req.url === '/configs') {
+    // قراءة ملفات التكوين
+    fs.readdir(CONFIG_DIR, (err, files) => {
+      if (err) {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('❌ خطأ أثناء قراءة الملفات');
+        return;
+      }
+
+      // تصفية ملفات التكوين النصية
+      const txtFiles = files.filter(file => file.endsWith('.txt'));
+
+      // إنشاء صفحة HTML
+      let html = `
+        <html>
+        <head>
+          <title>ملفات التكوين</title>
+          <style>
+            body { font-family: Arial, sans-serif; text-align: center; }
+            .file-list { margin: 20px auto; width: 50%; text-align: left; }
+            .file-item { margin: 5px 0; }
+            .search-box { margin-bottom: 20px; }
+          </style>
+        </head>
+        <body>
+          <h1>📂 ملفات التكوين</h1>
+          <input class="search-box" type="text" id="search" placeholder="🔍 ابحث عن ملف..." onkeyup="filterFiles()">
+          <div class="file-list" id="fileList">
+            ${txtFiles.map(file => `<div class="file-item"><a href="/configs/${file}" target="_blank">${file}</a></div>`).join('')}
+          </div>
+          <script>
+            function filterFiles() {
+              const search = document.getElementById('search').value.toLowerCase();
+              const items = document.querySelectorAll('.file-item');
+              items.forEach(item => {
+                const text = item.textContent.toLowerCase();
+                item.style.display = text.includes(search) ? '' : 'none';
+              });
+            }
+          </script>
+        </body>
+        </html>
+      `;
+
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(html);
+    });
+  } else if (req.url.startsWith('/configs/')) {
+    // عرض محتوى ملف التكوين
+    const fileName = decodeURIComponent(req.url.replace('/configs/', ''));
+    const filePath = `${CONFIG_DIR}/${fileName}`;
+
+    fs.readFile(filePath, 'utf8', (err, data) => {
+      if (err) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('❌ الملف غير موجود');
+        return;
+      }
+
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(data);
+    });
+  } else {
+    // ...existing code...
+  }
+}).listen(PORT, () => {
+  console.log(`🌐 HTTP Server running on port ${PORT}`);
+});
+
 const KEEP_ALIVE_URL = "https://cdcd.onrender.com/";
 setInterval(() => {
   https.get(KEEP_ALIVE_URL, (res) => {
@@ -215,29 +286,3 @@ function deleteOldConfigFiles() {
 setInterval(function() {
   deleteOldConfigFiles();
 }, 60 * 60 * 1000);
-
-// وظيفة لدفع ملفات التكوين إلى مستودع GitHub
-function pushConfigToGitHub() {
-  const commands = [
-    'git add .',
-    'git commit -m "تحديث ملفات التكوين"',
-    'git push'
-  ];
-
-  commands.forEach((cmd) => {
-    exec(cmd, (err, stdout, stderr) => {
-      if (err) {
-        console.error(`❌ خطأ أثناء تنفيذ الأمر ${cmd}:`, err.message);
-        return;
-      }
-      console.log(`✅ تم تنفيذ الأمر ${cmd} بنجاح:\n${stdout}`);
-    });
-  });
-}
-
-// استدعاء الوظيفة بعد إنشاء أو تعديل ملفات التكوين
-function updateConfigFile(filePath, content) {
-  fs.writeFileSync(filePath, content, 'utf8');
-  console.log(`✅ تم تحديث الملف: ${filePath}`);
-  pushConfigToGitHub();
-}
