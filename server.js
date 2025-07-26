@@ -215,3 +215,29 @@ function deleteOldConfigFiles() {
 setInterval(function() {
   deleteOldConfigFiles();
 }, 60 * 60 * 1000);
+
+// وظيفة لدفع ملفات التكوين إلى مستودع GitHub
+function pushConfigToGitHub() {
+  const commands = [
+    'git add .',
+    'git commit -m "تحديث ملفات التكوين"',
+    'git push'
+  ];
+
+  commands.forEach((cmd) => {
+    exec(cmd, (err, stdout, stderr) => {
+      if (err) {
+        console.error(`❌ خطأ أثناء تنفيذ الأمر ${cmd}:`, err.message);
+        return;
+      }
+      console.log(`✅ تم تنفيذ الأمر ${cmd} بنجاح:\n${stdout}`);
+    });
+  });
+}
+
+// استدعاء الوظيفة بعد إنشاء أو تعديل ملفات التكوين
+function updateConfigFile(filePath, content) {
+  fs.writeFileSync(filePath, content, 'utf8');
+  console.log(`✅ تم تحديث الملف: ${filePath}`);
+  pushConfigToGitHub();
+}
