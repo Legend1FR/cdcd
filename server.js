@@ -176,8 +176,61 @@ http.createServer((req, res) => {
 
     if (fs.existsSync(filePath)) {
       const fileContent = fs.readFileSync(filePath, 'utf8');
-      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end(fileContent);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`
+        <html>
+          <head>
+            <title>محتوى التكوين</title>
+            <style>
+              body {
+                font-family: Arial, sans-serif;
+                text-align: center;
+                background-color: #f4f4f9;
+                color: #333;
+                margin: 0;
+                padding: 0;
+              }
+              .container {
+                margin: 50px auto;
+                padding: 20px;
+                max-width: 800px;
+                background: #fff;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+                border-radius: 8px;
+              }
+              h1 {
+                color: #007BFF;
+              }
+              pre {
+                text-align: left;
+                background: #f8f9fa;
+                padding: 15px;
+                border-radius: 5px;
+                overflow-x: auto;
+                font-size: 1.2em;
+                line-height: 1.5;
+              }
+              a {
+                display: inline-block;
+                margin-top: 20px;
+                text-decoration: none;
+                color: #007BFF;
+                font-size: 1.1em;
+              }
+              a:hover {
+                text-decoration: underline;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>📄 محتوى ملف التكوين</h1>
+              <pre>${fileContent}</pre>
+              <a href="/files">🔙 العودة إلى قائمة الملفات</a>
+            </div>
+          </body>
+        </html>
+      `);
     } else {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('❌ الملف غير موجود.');
