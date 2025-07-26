@@ -91,21 +91,56 @@ http.createServer((req, res) => {
     }
   } else if (url.pathname === '/' && req.method === 'GET') {
     // صفحة البحث عن التوكن
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(`
-      <html>
-        <head>
-          <title>بحث عن التكوين</title>
-        </head>
-        <body style="text-align:center; font-family:Arial;">
-          <h1>🔍 البحث عن التكوين</h1>
-          <form method="GET" action="/search-token">
-            <input type="text" name="token" placeholder="أدخل اسم التوكن" required style="padding:10px; font-size:1em;" />
-            <button type="submit" style="padding:10px 20px; font-size:1em;">بحث</button>
-          </form>
-        </body>
-      </html>
-    `);
+    fs.readdir(CONFIG_DIR, (err, files) => {
+      if (err) {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('❌ حدث خطأ أثناء قراءة الملفات.');
+        return;
+      }
+
+      // تصفية الملفات الناجحة فقط
+      const successfulConfigs = files
+        .filter(file => file.endsWith('.txt') && file !== 'Buy_Token.txt')
+        .map(file => {
+          const filePath = `${CONFIG_DIR}/${file}`;
+          const content = fs.readFileSync(filePath, 'utf8');
+          if (content.includes('ناجح ✅️')) {
+            return file.replace('.txt', ''); // إزالة الامتداد
+          }
+          return null;
+        })
+        .filter(Boolean);
+
+      const configList = successfulConfigs
+        .map(token => `
+          <li>
+            ${token} 
+            <form method="POST" action="/sell" style="display:inline;">
+              <input type="hidden" name="token" value="${token}" />
+              <button type="submit" style="padding:5px 10px; font-size:0.9em;">SELL</button>
+            </form>
+          </li>
+        `)
+        .join('');
+
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`
+        <html>
+          <head>
+            <title>بحث عن التكوين</title>
+          </head>
+          <body style="text-align:center; font-family:Arial;">
+            <h1>🔍 البحث عن التكوين</h1>
+            <form method="GET" action="/search-token">
+              <input type="text" name="token" placeholder="أدخل اسم التوكن" required style="padding:10px; font-size:1em;" />
+              <button type="submit" style="padding:10px 20px; font-size:1em;">بحث</button>
+            </form>
+            <h2>✅ التكوينات الناجحة</h2>
+            <ul style="list-style:none; padding:0;">${configList}</ul>
+          </body>
+        </html>
+      `);
+    });
   } else if (url.pathname === '/upload' && req.method === 'GET') {
     // صفحة رفع الملفات
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -182,6 +217,34 @@ http.createServer((req, res) => {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('❌ الملف غير موجود.');
     }
+  } else if (url.pathname === '/sell' && req.method === 'POST') {
+    // معالجة طلب SELL
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk.toString();
+    });
+    req.on('end', async () => {
+      const params = new URLSearchParams(body);
+      const token = params.get('token');
+
+      if (token) {
+        const sellCommand = `/sell ${token} 100%`;
+        fs.appendFileSync("Sell_Token.txt", `${sellCommand}\n`, 'utf8');
+
+        // إرسال الأمر إلى البوت
+        try {
+          await client.sendMessage("@GMGN_sol_bot", { message: sellCommand });
+          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end(`✅ تم إرسال أمر SELL للتكوين: ${token}`);
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end(`❌ حدث خطأ أثناء إرسال أمر SELL: ${err.message}`);
+        }
+      } else {
+        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('❌ لم يتم تقديم اسم التوكن.');
+      }
+    });
   } else {
     // صفحة الحالة الرئيسية
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
