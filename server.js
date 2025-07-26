@@ -90,6 +90,12 @@ http.createServer((req, res) => {
   `);
 }).listen(PORT, () => {
   console.log(`🌐 HTTP Server running on port ${PORT}`);
+}).on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`❌ المنفذ ${PORT} قيد الاستخدام. حاول منفذًا آخر.`);
+  } else {
+    console.error(`❌ خطأ غير متوقع: ${err.message}`);
+  }
 });
 
 // إضافة مسار جديد لعرض واجهة ملفات التكوين
@@ -286,4 +292,3 @@ function deleteOldConfigFiles() {
 setInterval(function() {
   deleteOldConfigFiles();
 }, 60 * 60 * 1000);
-
