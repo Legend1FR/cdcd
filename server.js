@@ -4,9 +4,10 @@ const fs = require("fs");
 const input = require("input");
 const http = require("http");
 const https = require("https");
+const { exec } = require("child_process"); // لإرسال الأوامر إلى البوت
 
 
-const PHONE_NUMBER = "+966XXXXXXXXX"; // ضع رقمك هنا
+const PHONE_NUMBER = "+967781430676"; // ضع رقمك هنا
 const PASSWORD = "YOUR_PASSWORD"; // إذا كان لديك كلمة مرور 2FA
 const PHONE_CODE = undefined; // يمكن تركه undefined ليتم تجاهله
 
@@ -33,17 +34,19 @@ if (fs.existsSync("session.txt")) {
   stringSession = new StringSession(savedSession.trim());
 }
 
+// تعريف الكائن client في النطاق العام
+const client = new TelegramClient(stringSession, apiId, apiHash, {
+  connectionRetries: 5,
+});
+
 (async () => {
   console.log("📲 بدء الاتصال بتليجرام...");
-  const client = new TelegramClient(stringSession, apiId, apiHash, {
-    connectionRetries: 5,
-  });
 
   // تسجيل الدخول عند الحاجة فقط
   await client.start({
     phoneNumber: async () => PHONE_NUMBER,
     password: async () => PASSWORD,
-    phoneCode: async () => PHONE_CODE,
+    phoneCode: async () => await input.text("أدخل كود التحقق من تيليجرام:"),
     onError: (err) => console.log("❌ خطأ:", err),
   });
 
@@ -55,159 +58,14 @@ if (fs.existsSync("session.txt")) {
   console.log("💾 تم حفظ الجلسة في session.txt");
 
   await client.sendMessage("me", { message: "🚀 بوت الإشعارات شغال!" });
-
-  // تحقق من الانضمام للبوتات المطلوبة مرة واحدة فقط في الحياة
-  const joinedBotsFile = 'joined_bots.txt';
-  if (!fs.existsSync(joinedBotsFile)) {
-    try {
-      // قائمة البوتات المطلوبة
-      const botsToJoin = ['GMGN_sol_bot', 'solBigamout'];
-      for (const bot of botsToJoin) {
-        // أرسل فقط للبوتات التي تنتهي بـ _bot
-        if (bot.endsWith('_bot')) {
-          await client.sendMessage(bot, { message: '/start' });
-          await sleep(2000);
-        } else {
-          console.log(`⚠️ تخطي ${bot}: ليس بوت تليجرام.`);
-        }
-      }
-      fs.writeFileSync(joinedBotsFile, 'done');
-      console.log('✅ تم الانضمام لكل البوتات المطلوبة لأول مرة.');
-    } catch (err) {
-      console.error('❌ خطأ أثناء الانضمام للبوتات:', err.message);
-    }
-  }
-
-  // التتبع والتوجيه
-  client.addEventHandler(async (update) => {
-    try {
-      // استقبال كل الرسائل النصية الحقيقية من أي جهة
-      if (update.message && typeof update.message.message === "string") {
-        const msg = update.message;
-        const text = msg.message;
-        // فلترة الرسائل التي تحتوي فقط على "counts: 1" (وليس 11 أو 14)
-        if (/counts:\s*1(\D|$)/.test(text)) {
-          // استخراج التوكن بعد ca:
-          const caMatch = text.match(/ca:\s*([\w]+)/);
-          if (caMatch && caMatch[1]) {
-            const token = caMatch[1];
-            // طباعة التوكن فقط بدون ca:
-            console.log(token);
-            // حفظ التوكن في ملف لاستخدامه في بوت sniperoo
-            fs.writeFileSync('last_token.txt', token, 'utf8');
-
-            // بدء التداول في بوت GMGN
-            await tradeInGMGNBot(client, token);
-          }
-        }
-      }
-    } catch (err) {
-      console.error("❌ خطأ أثناء التوجيه:", err.message);
-    }
-  });
 })();
-
-// دالة التداول التلقائي في بوت GMGN
-async function tradeInGMGNBot(client, token) {
-  const botUsername = 'GMGN_sol_bot';
-  const lastStartFile = 'gmgn_last_start.txt';
-  let shouldSendStart = true;
-  try {
-    // تحقق من آخر إرسال لـ /start
-    if (fs.existsSync(lastStartFile)) {
-      const lastStartDate = fs.readFileSync(lastStartFile, 'utf8').trim();
-      const today = new Date().toISOString().slice(0, 10);
-      if (lastStartDate === today) {
-        shouldSendStart = false;
-      }
-    }
-    // إرسال /start مرة واحدة فقط يومياً
-    if (shouldSendStart) {
-      await client.sendMessage(botUsername, { message: '/start' });
-      fs.writeFileSync(lastStartFile, new Date().toISOString().slice(0, 10));
-      await sleep(2000);
-    }
-    // إرسال التوكن
-    await client.sendMessage(botUsername, { message: token });
-    await sleep(3000);
-
-    // استقبال رسائل البوت وطباعة كل رسالة والبحث عن السعر
-    let price = null;
-    let done = false;
-    let lastBotMessage = null;
-    const handler = async (update) => {
-      // تحقق من أن الرسالة من بوت GMGN بناءً على اسم المستخدم أو peerId
-      if (update.message && update.message.peerId && (
-            (update.message.peerId.userId && update.message.peerId.userId.toString().includes('GMGN')) ||
-            (update.message.peerId.channelId && botUsername.includes('GMGN'))
-          )) {
-        const text = update.message.message;
-        lastBotMessage = text;
-        // تحقق أن الرسالة تحتوي على التوكن المطلوب
-        if (text.includes(token)) {
-          // استخراج السعر من الرسالة
-          let priceMatch = text.match(/price:\s*\$?([\d\.]+)/i);
-          if (priceMatch && priceMatch[1]) {
-            price = parseFloat(priceMatch[1]);
-            done = true;
-            // طباعة السعر فقط بدون باقي الرسالة وبدون علامة الدولار
-            console.log('📩 السعر من GMGN: ' + priceMatch[1]);
-            // حساب السعر الجديد بزيادة 1000%
-            const newPrice = (price * 10).toFixed(6);
-            // إعداد أمر التداول
-            const orderMsg = `/create limitbuy ${token} 0.5@${newPrice} -exp 86400`;
-            // طباعة الأمر في الكونسول وتخزينه مؤقتًا
-            console.log('⏳ سيتم إرسال أمر التداول بعد 5 دقائق:', orderMsg);
-            // تخزين الأمر في ملف مؤقت (اختياري)
-            fs.writeFileSync('pending_order.txt', orderMsg, 'utf8');
-            // إرسال الأمر بعد 5 دقائق
-            setTimeout(async () => {
-              try {
-                await client.sendMessage(botUsername, { message: orderMsg });
-                console.log('✅ تم إرسال أمر التداول بعد 5 دقائق:', orderMsg);
-                // حذف الملف المؤقت بعد الإرسال
-                fs.unlinkSync('pending_order.txt');
-              } catch (err) {
-                console.error('❌ خطأ أثناء إرسال أمر التداول بعد 5 دقائق:', err.message);
-              }
-            }, 5 * 60 * 1000); // 5 دقائق
-            done = true;
-          } else {
-            // إذا لم يوجد سعر، اطبع الرسالة كاملة
-            console.log('📩 رسالة من GMGN:\n' + text);
-          }
-        }
-      }
-    };
-    client.addEventHandler(handler);
-    // انتظر حتى يتم استقبال السعر أو انتهاء المهلة
-    let tries = 0;
-    while (!done && tries < 10) {
-      await sleep(1000);
-      tries++;
-    }
-    client.removeEventHandler(handler);
-    if (!price) {
-      console.log('📩 رد البوت بعد ارسال التوكن:\n' + (lastBotMessage || 'لم يتم استقبال أي رسالة من البوت بعد إرسال التوكن'));
-      return;
-    }
-    // حساب السعر الجديد بزيادة 1000%
-    const newPrice = (price * 10).toFixed(6);
-    // إرسال أمر التداول
-    const orderMsg = `/create limitbuy ${token} 0.5@${newPrice} -exp 86400`;
-    await client.sendMessage(botUsername, { message: orderMsg });
-    console.log('✅ تم إرسال أمر التداول:', orderMsg);
-  } catch (err) {
-    console.error('❌ خطأ في التداول مع GMGN:', err.message);
-  }
-}
 
 // دالة تأخير بسيطة
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3100;
 http.createServer((req, res) => {
   // حساب عدد مرات الدخول والخروج خلال آخر 24 ساعة
   let count = 0;
@@ -251,3 +109,109 @@ process.on('SIGINT', () => {
   logLoginLogout('logout');
   process.exit();
 });
+
+// تعديل لجعل البحث يشمل جميع الرسائل الواردة
+const tokenData = {}; // تخزين بيانات التوكنات مؤقتًا
+
+client.addEventHandler(async (update) => {
+  try {
+    if (update.message && typeof update.message.message === "string") {
+      const msg = update.message;
+      const text = msg.message;
+
+      // التحقق من الرسائل التي تحتوي على "COUNTS: X"
+      const countMatch = text.match(/COUNTS:\s*(\d+)/i);
+      const tokenMatch = text.match(/ca:\s*([\w]+)/i);
+
+      if (countMatch && tokenMatch) {
+        const count = parseInt(countMatch[1], 10);
+        const token = tokenMatch[1];
+        const now = Date.now();
+
+        // إذا كانت الرسالة الأولى "COUNTS: 1"
+        if (count === 1) {
+          tokenData[token] = [{ count, timestamp: now }];
+          fs.writeFileSync(`${token}.txt`, `${token} : Counts: 1\n`, 'utf8');
+        } else if (tokenData[token]) {
+          // إذا كانت الرسالة تحتوي على "COUNTS: X" حيث X > 1
+          const previous = tokenData[token][tokenData[token].length - 1];
+          const timeDiff = Math.round((now - previous.timestamp) / 1000); // الفرق بالثواني
+
+          // تحديث البيانات وحفظها في الملف
+          tokenData[token].push({ count, timestamp: now });
+          fs.appendFileSync(
+            `${token}.txt`,
+            `Counts: ${count} To Counts: ${previous.count} = ${timeDiff}second\n`,
+            'utf8'
+          );
+
+          // التحقق عند الوصول إلى 10 فترات
+          if (tokenData[token].length === 10) {
+            const timeDiffs = tokenData[token].slice(1).map((entry, index) => {
+              return Math.round((entry.timestamp - tokenData[token][index].timestamp) / 1000);
+            });
+
+            const isSuccessful = timeDiffs.every(diff => diff >= 12 && diff <= 5000);
+
+            if (isSuccessful) {
+              fs.appendFileSync(`${token}.txt`, `ناجح ✅️\n`, 'utf8');
+              const buyCommand = `/buy ${token} 0.5`;
+              fs.appendFileSync("Buy_Token.txt", `${buyCommand}\n`, 'utf8');
+
+              // إرسال الأمر إلى البوت
+              await client.sendMessage("@GMGN_sol_bot", { message: buyCommand });
+            } else {
+              fs.appendFileSync(`${token}.txt`, `فاشل ❌️\n`, 'utf8');
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("❌ خطأ أثناء التوجيه:", err.message);
+  }
+});
+
+// وظيفة لحذف ملفات التكوين القديمة
+const CONFIG_DIR = __dirname; // مسار الملفات
+const DELETE_AFTER_HOURS = 48; // عدد الساعات قبل الحذف
+
+function deleteOldConfigFiles() {
+  const now = Date.now();
+  const deleteThreshold = DELETE_AFTER_HOURS * 60 * 60 * 1000; // تحويل الساعات إلى ميلي ثانية
+
+  fs.readdir(CONFIG_DIR, (err, files) => {
+    if (err) {
+      console.error("❌ خطأ أثناء قراءة الملفات:", err.message);
+      return;
+    }
+
+    files.forEach((file) => {
+      if (file.endsWith(".txt") && file !== "Buy_Token.txt") { // استهداف ملفات التكوين فقط
+        const filePath = `${CONFIG_DIR}/${file}`;
+        fs.stat(filePath, (err, stats) => {
+          if (err) {
+            console.error(`❌ خطأ أثناء فحص الملف ${file}:`, err.message);
+            return;
+          }
+
+          const fileAge = now - stats.mtimeMs; // حساب عمر الملف
+          if (fileAge > deleteThreshold) {
+            fs.unlink(filePath, (err) => {
+              if (err) {
+                console.error('خطأ أثناء حذف الملف:', file, err.message);
+              } else {
+                console.log('تم حذف الملف القديم:', file);
+              }
+            });
+          }
+        });
+      }
+    });
+  });
+}
+
+// تشغيل وظيفة الحذف كل ساعة
+setInterval(function() {
+  deleteOldConfigFiles();
+}, 60 * 60 * 1000);
