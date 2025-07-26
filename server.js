@@ -216,36 +216,50 @@ setInterval(function() {
   deleteOldConfigFiles();
 }, 60 * 60 * 1000);
 
-// إضافة API Endpoint للبحث عن التكوينات
+// إضافة نقطة نهاية لعرض محتوى ملفات التكوين بناءً على التوكن
 http.createServer((req, res) => {
-  if (req.url.startsWith('/search-config') && req.method === 'GET') {
-    const query = new URL(req.url, `http://${req.headers.host}`).searchParams.get('q');
-    if (!query) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'يرجى تقديم استعلام البحث' }));
+  const url = new URL(req.url, `http://${req.headers.host}`);
+
+  if (url.pathname === '/search-token' && req.method === 'GET') {
+    const token = url.searchParams.get('token');
+
+    if (!token) {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('❌ يرجى تقديم اسم التوكن في الطلب.');
       return;
     }
 
-    const matchingFiles = [];
-    fs.readdir(CONFIG_DIR, (err, files) => {
-      if (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'خطأ أثناء قراءة الملفات' }));
-        return;
-      }
+    const filePath = `${__dirname}/${token}.txt`;
 
-      files.forEach((file) => {
-        if (file.endsWith('.txt') && file.includes(query)) {
-          const filePath = `${CONFIG_DIR}/${file}`;
-          const content = fs.readFileSync(filePath, 'utf8');
-          matchingFiles.push({ fileName: file, content });
-        }
-      });
-
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(matchingFiles));
-    });
+    if (fs.existsSync(filePath)) {
+      const fileContent = fs.readFileSync(filePath, 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(fileContent);
+    } else {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('❌ الملف غير موجود.');
+    }
+  } else if (url.pathname === '/' && req.method === 'GET') {
+    // صفحة البحث عن التوكن
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`
+      <html>
+        <head>
+          <title>بحث عن التكوين</title>
+        </head>
+        <body style="text-align:center; font-family:Arial;">
+          <h1>🔍 البحث عن التكوين</h1>
+          <form method="GET" action="/search-token">
+            <input type="text" name="token" placeholder="أدخل اسم التوكن" required style="padding:10px; font-size:1em;" />
+            <button type="submit" style="padding:10px 20px; font-size:1em;">بحث</button>
+          </form>
+        </body>
+      </html>
+    `);
   } else {
-    // ...existing code...
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('❌ الصفحة غير موجودة.');
   }
+}).listen(PORT, () => {
+  console.log(`🌐 HTTP Server running on port ${PORT}`);
 });
