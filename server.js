@@ -67,27 +67,53 @@ function sleep(ms) {
 
 const PORT = process.env.PORT || 3100;
 http.createServer((req, res) => {
-  // حساب عدد مرات الدخول والخروج خلال آخر 24 ساعة
-  let count = 0;
-  try {
-    const logFile = 'login_logout_log.txt';
-    if (fs.existsSync(logFile)) {
-      const logs = fs.readFileSync(logFile, 'utf8').split('\n').filter(Boolean);
-      const now = Date.now();
-      const oneDay = 24 * 60 * 60 * 1000;
-      count = logs.filter(line => {
-        const [, time] = line.split(',');
-        return now - new Date(time).getTime() <= oneDay;
-      }).length;
+  const url = new URL(req.url, `http://${req.headers.host}`);
+
+  if (url.pathname === '/search-token' && req.method === 'GET') {
+    const token = url.searchParams.get('token');
+
+    if (!token) {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('❌ يرجى تقديم اسم التوكن في الطلب.');
+      return;
     }
-  } catch {}
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  res.end(`
-    <div style='text-align:center;'>
-      <div style='font-size:2em;'>🚀 البوت يعمل الآن 24 ساعة على السيرفر!</div>
-      <div style='margin-top:20px; font-size:3em; color:#0078D7; font-weight:bold;'>عدد مرات تسجيل الدخول والخروج خلال 24 ساعة: ${count}</div>
-    </div>
-  `);
+
+    const filePath = `${__dirname}/${token}.txt`;
+
+    if (fs.existsSync(filePath)) {
+      const fileContent = fs.readFileSync(filePath, 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(fileContent);
+    } else {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('❌ الملف غير موجود.');
+    }
+  } else if (url.pathname === '/' && req.method === 'GET') {
+    // صفحة البحث عن التوكن
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`
+      <html>
+        <head>
+          <title>بحث عن التكوين</title>
+        </head>
+        <body style="text-align:center; font-family:Arial;">
+          <h1>🔍 البحث عن التكوين</h1>
+          <form method="GET" action="/search-token">
+            <input type="text" name="token" placeholder="أدخل اسم التوكن" required style="padding:10px; font-size:1em;" />
+            <button type="submit" style="padding:10px 20px; font-size:1em;">بحث</button>
+          </form>
+        </body>
+      </html>
+    `);
+  } else {
+    // صفحة الحالة الرئيسية
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(`
+      <div style='text-align:center;'>
+        <div style='font-size:2em;'>🚀 البوت يعمل الآن 24 ساعة على السيرفر!</div>
+      </div>
+    `);
+  }
 }).listen(PORT, () => {
   console.log(`🌐 HTTP Server running on port ${PORT}`);
 });
@@ -215,51 +241,3 @@ function deleteOldConfigFiles() {
 setInterval(function() {
   deleteOldConfigFiles();
 }, 60 * 60 * 1000);
-
-// إضافة نقطة نهاية لعرض محتوى ملفات التكوين بناءً على التوكن
-http.createServer((req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
-
-  if (url.pathname === '/search-token' && req.method === 'GET') {
-    const token = url.searchParams.get('token');
-
-    if (!token) {
-      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('❌ يرجى تقديم اسم التوكن في الطلب.');
-      return;
-    }
-
-    const filePath = `${__dirname}/${token}.txt`;
-
-    if (fs.existsSync(filePath)) {
-      const fileContent = fs.readFileSync(filePath, 'utf8');
-      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end(fileContent);
-    } else {
-      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('❌ الملف غير موجود.');
-    }
-  } else if (url.pathname === '/' && req.method === 'GET') {
-    // صفحة البحث عن التوكن
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(`
-      <html>
-        <head>
-          <title>بحث عن التكوين</title>
-        </head>
-        <body style="text-align:center; font-family:Arial;">
-          <h1>🔍 البحث عن التكوين</h1>
-          <form method="GET" action="/search-token">
-            <input type="text" name="token" placeholder="أدخل اسم التوكن" required style="padding:10px; font-size:1em;" />
-            <button type="submit" style="padding:10px 20px; font-size:1em;">بحث</button>
-          </form>
-        </body>
-      </html>
-    `);
-  } else {
-    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('❌ الصفحة غير موجودة.');
-  }
-}).listen(PORT, () => {
-  console.log(`🌐 HTTP Server running on port ${PORT}`);
-});
