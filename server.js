@@ -5,6 +5,7 @@ const input = require("input");
 const http = require("http");
 const https = require("https");
 const { exec } = require("child_process"); // لإرسال الأوامر إلى البوت
+const multer = require("multer"); // إضافة مكتبة multer لمعالجة رفع الملفات
 
 
 const PHONE_NUMBER = "+967781430676"; // ضع رقمك هنا
@@ -105,6 +106,82 @@ http.createServer((req, res) => {
         </body>
       </html>
     `);
+  } else if (url.pathname === '/upload' && req.method === 'GET') {
+    // صفحة رفع الملفات
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`
+      <html>
+        <head>
+          <title>رفع ملفات التكوين</title>
+        </head>
+        <body style="text-align:center; font-family:Arial;">
+          <h1>📤 رفع ملفات التكوين</h1>
+          <form method="POST" action="/upload" enctype="multipart/form-data">
+            <input type="file" name="configFile" required style="padding:10px; font-size:1em;" />
+            <button type="submit" style="padding:10px 20px; font-size:1em;">رفع</button>
+          </form>
+        </body>
+      </html>
+    `);
+  } else if (url.pathname === '/upload' && req.method === 'POST') {
+    const form = new multer({ dest: 'uploads/' });
+    form.single('configFile')(req, res, (err) => {
+      if (err) {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('❌ حدث خطأ أثناء رفع الملف.');
+        return;
+      }
+
+      const uploadedFile = req.file;
+      if (uploadedFile) {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end(`✅ تم رفع الملف بنجاح: ${uploadedFile.originalname}`);
+      } else {
+        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('❌ يرجى اختيار ملف لرفعه.');
+      }
+    });
+  } else if (url.pathname === '/files' && req.method === 'GET') {
+    // صفحة عرض الملفات المرفوعة
+    fs.readdir(CONFIG_DIR, (err, files) => {
+      if (err) {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('❌ حدث خطأ أثناء قراءة الملفات.');
+        return;
+      }
+
+      const fileLinks = files
+        .filter(file => file.endsWith('.txt'))
+        .map(file => `<li><a href="/files/${file}" target="_blank">${file}</a></li>`)
+        .join('');
+
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`
+        <html>
+          <head>
+            <title>الملفات المرفوعة</title>
+          </head>
+          <body style="text-align:center; font-family:Arial;">
+            <h1>📂 الملفات المرفوعة</h1>
+            <ul style="list-style:none; padding:0;">${fileLinks}</ul>
+            <a href="/upload" style="display:block; margin-top:20px;">🔙 العودة إلى صفحة الرفع</a>
+          </body>
+        </html>
+      `);
+    });
+  } else if (url.pathname.startsWith('/files/') && req.method === 'GET') {
+    // عرض محتوى ملف معين
+    const fileName = url.pathname.replace('/files/', '');
+    const filePath = `${CONFIG_DIR}/${fileName}`;
+
+    if (fs.existsSync(filePath)) {
+      const fileContent = fs.readFileSync(filePath, 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(fileContent);
+    } else {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('❌ الملف غير موجود.');
+    }
   } else {
     // صفحة الحالة الرئيسية
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
