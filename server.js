@@ -79,7 +79,7 @@ http.createServer((req, res) => {
       return;
     }
 
-    const filePath = `${__dirname}/${token}.txt`;
+    const filePath = `${CONFIG_DIR}/${token}.txt`;
 
     if (fs.existsSync(filePath)) {
       const fileContent = fs.readFileSync(filePath, 'utf8');
@@ -234,7 +234,7 @@ client.addEventHandler(async (update) => {
         // إذا كانت الرسالة الأولى "COUNTS: 1"
         if (count === 1) {
           tokenData[token] = [{ count, timestamp: now }];
-          fs.writeFileSync(`${token}.txt`, `${token} : Counts: 1\n`, 'utf8');
+          fs.writeFileSync(`${CONFIG_DIR}/${token}.txt`, `${token} : Counts: 1\n`, 'utf8');
         } else if (tokenData[token]) {
           // إذا كانت الرسالة تحتوي على "COUNTS: X" حيث X > 1
           const previous = tokenData[token][tokenData[token].length - 1];
@@ -243,7 +243,7 @@ client.addEventHandler(async (update) => {
           // تحديث البيانات وحفظها في الملف
           tokenData[token].push({ count, timestamp: now });
           fs.appendFileSync(
-            `${token}.txt`,
+            `${CONFIG_DIR}/${token}.txt`,
             `Counts: ${count} To Counts: ${previous.count} = ${timeDiff}second\n`,
             'utf8'
           );
@@ -257,14 +257,14 @@ client.addEventHandler(async (update) => {
             const isSuccessful = timeDiffs.every(diff => diff >= 12 && diff <= 5000);
 
             if (isSuccessful) {
-              fs.appendFileSync(`${token}.txt`, `ناجح ✅️\n`, 'utf8');
+              fs.appendFileSync(`${CONFIG_DIR}/${token}.txt`, `ناجح ✅️\n`, 'utf8');
               const buyCommand = `/buy ${token} 0.5`;
               fs.appendFileSync("Buy_Token.txt", `${buyCommand}\n`, 'utf8');
 
               // إرسال الأمر إلى البوت
               await client.sendMessage("@GMGN_sol_bot", { message: buyCommand });
             } else {
-              fs.appendFileSync(`${token}.txt`, `فاشل ❌️\n`, 'utf8');
+              fs.appendFileSync(`${CONFIG_DIR}/${token}.txt`, `فاشل ❌️\n`, 'utf8');
             }
           }
         }
@@ -276,7 +276,6 @@ client.addEventHandler(async (update) => {
 });
 
 // وظيفة لحذف ملفات التكوين القديمة
-const CONFIG_DIR = __dirname; // مسار الملفات
 const DELETE_AFTER_HOURS = 48; // عدد الساعات قبل الحذف
 
 function deleteOldConfigFiles() {
@@ -318,3 +317,32 @@ function deleteOldConfigFiles() {
 setInterval(function() {
   deleteOldConfigFiles();
 }, 60 * 60 * 1000);
+
+// إنشاء مجلد configs إذا لم يكن موجودًا
+const CONFIG_DIR = `${__dirname}/configs`;
+if (!fs.existsSync(CONFIG_DIR)) {
+  fs.mkdirSync(CONFIG_DIR);
+}
+
+// نقل الملفات الحالية إلى مجلد configs
+fs.readdir(__dirname, (err, files) => {
+  if (err) {
+    console.error("❌ خطأ أثناء قراءة الملفات:", err.message);
+    return;
+  }
+
+  files.forEach((file) => {
+    if (file.endsWith(".txt") && file !== "Buy_Token.txt") {
+      const oldPath = `${__dirname}/${file}`;
+      const newPath = `${CONFIG_DIR}/${file}`;
+
+      fs.rename(oldPath, newPath, (err) => {
+        if (err) {
+          console.error(`❌ خطأ أثناء نقل الملف ${file}:`, err.message);
+        } else {
+          console.log(`✅ تم نقل الملف ${file} إلى المجلد configs.`);
+        }
+      });
+    }
+  });
+});
