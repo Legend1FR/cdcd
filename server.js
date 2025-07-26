@@ -65,7 +65,7 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-const PORT = process.env.PORT || 3114;
+const PORT = process.env.PORT || 3100;
 http.createServer((req, res) => {
   // حساب عدد مرات الدخول والخروج خلال آخر 24 ساعة
   let count = 0;
@@ -90,81 +90,7 @@ http.createServer((req, res) => {
   `);
 }).listen(PORT, () => {
   console.log(`🌐 HTTP Server running on port ${PORT}`);
-}).on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`❌ المنفذ ${PORT} قيد الاستخدام. حاول منفذًا آخر.`);
-  } else {
-    console.error(`❌ خطأ غير متوقع: ${err.message}`);
-  }
 });
-
-// إضافة مسار جديد لعرض واجهة ملفات التكوين
-http.createServer((req, res) => {
-  if (req.url === '/configs') {
-    // قراءة ملفات التكوين
-    fs.readdir(CONFIG_DIR, (err, files) => {
-      if (err) {
-        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('❌ خطأ أثناء قراءة الملفات');
-        return;
-      }
-
-      // تصفية ملفات التكوين النصية
-      const txtFiles = files.filter(file => file.endsWith('.txt'));
-
-      // إنشاء صفحة HTML
-      let html = `
-        <html>
-        <head>
-          <title>ملفات التكوين</title>
-          <style>
-            body { font-family: Arial, sans-serif; text-align: center; }
-            .file-list { margin: 20px auto; width: 50%; text-align: left; }
-            .file-item { margin: 5px 0; }
-            .search-box { margin-bottom: 20px; }
-          </style>
-        </head>
-        <body>
-          <h1>📂 ملفات التكوين</h1>
-          <input class="search-box" type="text" id="search" placeholder="🔍 ابحث عن ملف..." onkeyup="filterFiles()">
-          <div class="file-list" id="fileList">
-            ${txtFiles.map(file => `<div class="file-item"><a href="/configs/${file}" target="_blank">${file}</a></div>`).join('')}
-          </div>
-          <script>
-            function filterFiles() {
-              const search = document.getElementById('search').value.toLowerCase();
-              const items = document.querySelectorAll('.file-item');
-              items.forEach(item => {
-                const text = item.textContent.toLowerCase();
-                item.style.display = text.includes(search) ? '' : 'none';
-              });
-            }
-          </script>
-        </body>
-        </html>
-      `;
-
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(html);
-    });
-  } else if (req.url.startsWith('/configs/')) {
-    // عرض محتوى ملف التكوين
-    const fileName = decodeURIComponent(req.url.replace('/configs/', ''));
-    const filePath = `${CONFIG_DIR}/${fileName}`;
-
-    fs.readFile(filePath, 'utf8', (err, data) => {
-      if (err) {
-        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('❌ الملف غير موجود');
-        return;
-      }
-
-      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end(data);
-    });
-  } else {
-    // ...existing code...
-  }
 
 const KEEP_ALIVE_URL = "https://cdcd.onrender.com/";
 setInterval(() => {
@@ -290,3 +216,36 @@ setInterval(function() {
   deleteOldConfigFiles();
 }, 60 * 60 * 1000);
 
+// إضافة API Endpoint للبحث عن التكوينات
+http.createServer((req, res) => {
+  if (req.url.startsWith('/search-config') && req.method === 'GET') {
+    const query = new URL(req.url, `http://${req.headers.host}`).searchParams.get('q');
+    if (!query) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'يرجى تقديم استعلام البحث' }));
+      return;
+    }
+
+    const matchingFiles = [];
+    fs.readdir(CONFIG_DIR, (err, files) => {
+      if (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'خطأ أثناء قراءة الملفات' }));
+        return;
+      }
+
+      files.forEach((file) => {
+        if (file.endsWith('.txt') && file.includes(query)) {
+          const filePath = `${CONFIG_DIR}/${file}`;
+          const content = fs.readFileSync(filePath, 'utf8');
+          matchingFiles.push({ fileName: file, content });
+        }
+      });
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(matchingFiles));
+    });
+  } else {
+    // ...existing code...
+  }
+});
