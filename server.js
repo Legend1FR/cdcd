@@ -82,12 +82,11 @@ if (fs.existsSync("session.txt")) {
   // التتبع والتوجيه
   client.addEventHandler(async (update) => {
     try {
-      // استقبال كل الرسائل النصية الحقيقية من أي جهة
       if (update.message && typeof update.message.message === "string") {
         const msg = update.message;
         const text = msg.message;
-        // فلترة الرسائل التي تحتوي فقط على "counts: 1" (وليس 11 أو 14)
-        if (/60\.00\s*SOL(\D|$)/.test(text)) {
+        // فلترة الرسائل التي تحتوي على "60 SOL" أو أكثر و"counts: 1"
+        if (/\bcounts:\s*1\b/i.test(text) && /([6-9]\d|\d{3,})\.\d{2}\s*SOL(\D|$)/.test(text)) {
           const startTime = performance.now();
           // استخراج التوكن بعد ca:
           const caMatch = text.match(/ca:\s*([\w]+)/);
@@ -102,10 +101,28 @@ if (fs.existsSync("session.txt")) {
             // حفظ التوكن في ملف لاستخدامه في بوت sniperoo
             fs.writeFileSync('last_token.txt', token, 'utf8');
 
+            // إرسال التوكن لمعرفة السعر قبل الشراء
+            await client.sendMessage(botUsername, { message: token });
+            console.log('📩 تم إرسال التكوين لمعرفة السعر قبل الشراء.');
+
             // إرسال أمر الشراء المباشر
             const buyMsg = `/buy ${token} 0.5`;
             await client.sendMessage(botUsername, { message: buyMsg });
             console.log('✅ تم إرسال أمر الشراء المباشر:', buyMsg);
+
+            // تعديل لإرسال التكوين 3 مرات بعد أمر الشراء لمعرفة المعلومات وتحديث الأسعار
+            await client.sendMessage(botUsername, { message: token });
+            console.log('📩 تم إرسال التكوين لمعرفة المعلومات.');
+
+            // الانتظار ثانية واحدة قبل الإرسال الثاني
+            await sleep(1000);
+            await client.sendMessage(botUsername, { message: token });
+            console.log('📩 تم إرسال التكوين مرة ثانية لتحديث المعلومات.');
+
+            // الانتظار ثانية واحدة قبل الإرسال الثالث
+            await sleep(1000);
+            await client.sendMessage(botUsername, { message: token });
+            console.log('📩 تم إرسال التكوين مرة ثالثة لتحديث المعلومات.');
 
             // إضافة التوكن إلى القائمة المرسلة
             sentTokens.add(token);
