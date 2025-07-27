@@ -4,10 +4,11 @@ const fs = require("fs");
 const input = require("input");
 const http = require("http");
 const https = require("https");
-const { performance } = require('perf_hooks');
+const { exec } = require("child_process"); // لإرسال الأوامر إلى البوت
+const multer = require("multer"); // إضافة مكتبة multer لمعالجة رفع الملفات
 
-// بيانات الدخول تلقائية للسيرفر
-const PHONE_NUMBER = "+966XXXXXXXXX";  // ضع رقمك هنا
+
+const PHONE_NUMBER = "+967781430676"; // ضع رقمك هنا
 const PASSWORD = "YOUR_PASSWORD"; // إذا كان لديك كلمة مرور 2FA
 const PHONE_CODE = undefined; // يمكن تركه undefined ليتم تجاهله
 
@@ -34,17 +35,19 @@ if (fs.existsSync("session.txt")) {
   stringSession = new StringSession(savedSession.trim());
 }
 
+// تعريف الكائن client في النطاق العام
+const client = new TelegramClient(stringSession, apiId, apiHash, {
+  connectionRetries: 5,
+});
+
 (async () => {
   console.log("📲 بدء الاتصال بتليجرام...");
-  const client = new TelegramClient(stringSession, apiId, apiHash, {
-    connectionRetries: 5,
-  });
 
   // تسجيل الدخول عند الحاجة فقط
   await client.start({
     phoneNumber: async () => PHONE_NUMBER,
     password: async () => PASSWORD,
-    phoneCode: async () => PHONE_CODE,
+    phoneCode: async () => await input.text("أدخل كود التحقق من تيليجرام:"),
     onError: (err) => console.log("❌ خطأ:", err),
   });
 
@@ -56,211 +59,201 @@ if (fs.existsSync("session.txt")) {
   console.log("💾 تم حفظ الجلسة في session.txt");
 
   await client.sendMessage("me", { message: "🚀 بوت الإشعارات شغال!" });
-
-  // تحقق من الانضمام للبوتات المطلوبة مرة واحدة فقط في الحياة
-  const joinedBotsFile = 'joined_bots.txt';
-  if (!fs.existsSync(joinedBotsFile)) {
-    try {
-      // قائمة البوتات المطلوبة
-      const botsToJoin = ['GMGN_sol_bot', 'solBigamout'];
-      for (const bot of botsToJoin) {
-        // أرسل فقط للبوتات التي تنتهي بـ _bot
-        if (bot.endsWith('_bot')) {
-          await client.sendMessage(bot, { message: '/start' });
-          await sleep(2000);
-        } else {
-          console.log(`⚠️ تخطي ${bot}: ليس بوت تليجرام.`);
-        }
-      }
-      fs.writeFileSync(joinedBotsFile, 'done');
-      console.log('✅ تم الانضمام لكل البوتات المطلوبة لأول مرة.');
-    } catch (err) {
-      console.error('❌ خطأ أثناء الانضمام للبوتات:', err.message);
-    }
-  }
-
-  // التتبع والتوجيه
-  client.addEventHandler(async (update) => {
-    try {
-      // استقبال كل الرسائل النصية الحقيقية من أي جهة
-      if (update.message && typeof update.message.message === "string") {
-        const msg = update.message;
-        const text = msg.message;
-        // فلترة الرسائل التي تحتوي فقط على "counts: 1" (وليس 11 أو 14)
-        if (/60\.00\s*SOL(\D|$)/.test(text)) {
-          const startTime = performance.now();
-          // استخراج التوكن بعد ca:
-          const caMatch = text.match(/ca:\s*([\w]+)/);
-          if (caMatch && caMatch[1]) {
-            const token = caMatch[1];
-            if (sentTokens.has(token)) {
-              console.log(`⚠️ التوكن ${token} تم إرساله مسبقًا. تخطي.`);
-              return;
-            }
-            // طباعة التوكن فقط بدون ca:
-            console.log(token);
-            // حفظ التوكن في ملف لاستخدامه في بوت sniperoo
-            fs.writeFileSync('last_token.txt', token, 'utf8');
-
-            // إرسال أمر الشراء المباشر
-            const buyMsg = `/buy ${token} 0.5`;
-            await client.sendMessage(botUsername, { message: buyMsg });
-            console.log('✅ تم إرسال أمر الشراء المباشر:', buyMsg);
-
-            // إضافة التوكن إلى القائمة المرسلة
-            sentTokens.add(token);
-            fs.appendFileSync(sentTokensFile, `${token}\n`, 'utf8');
-
-            const endTime = performance.now();
-            const executionTimeLog = `⏱️ وقت التنفيذ للتوكن ${token}: ${(endTime - startTime).toFixed(2)} مللي ثانية.`;
-            console.log(executionTimeLog);
-            executionLogsBuffer.push(`${executionTimeLog}\n`);
-          }
-        }
-      }
-    } catch (err) {
-      console.error("❌ خطأ أثناء التوجيه:", err.message);
-    }
-  });
 })();
-
-const botUsername = 'GMGN_sol_bot';
-
-// دالة التداول التلقائي في بوت GMGN
-async function tradeInGMGNBot(client, token) {
-  const lastStartFile = 'gmgn_last_start.txt';
-  let shouldSendStart = true;
-  try {
-    // تحقق من آخر إرسال لـ /start
-    if (fs.existsSync(lastStartFile)) {
-      const lastStartDate = fs.readFileSync(lastStartFile, 'utf8').trim();
-      const today = new Date().toISOString().slice(0, 10);
-      if (lastStartDate === today) {
-        shouldSendStart = false;
-      }
-    }
-    // إرسال /start مرة واحدة فقط يومياً
-    if (shouldSendStart) {
-      await client.sendMessage(botUsername, { message: '/start' });
-      fs.writeFileSync(lastStartFile, new Date().toISOString().slice(0, 10));
-      await sleep(2000);
-    }
-    // إرسال التوكن
-    await client.sendMessage(botUsername, { message: token });
-    await sleep(3000);
-
-    // استقبال رسائل البوت وطباعة كل رسالة والبحث عن السعر
-    let price = null;
-    let done = false;
-    let lastBotMessage = null;
-    const handler = async (update) => {
-      // تحقق من أن الرسالة من بوت GMGN بناءً على اسم المستخدم أو peerId
-      if (update.message && update.message.peerId && (
-            (update.message.peerId.userId && update.message.peerId.userId.toString().includes('GMGN')) ||
-            (update.message.peerId.channelId && botUsername.includes('GMGN'))
-          )) {
-        const text = update.message.message;
-        lastBotMessage = text;
-        // تحقق أن الرسالة تحتوي على التوكن المطلوب
-        if (text.includes(token)) {
-          // استخراج السعر من الرسالة
-          let priceMatch = text.match(/price:\s*\$?([\d\.]+)/i);
-          if (priceMatch && priceMatch[1]) {
-            price = parseFloat(priceMatch[1]);
-            done = true;
-            // طباعة السعر فقط بدون باقي الرسالة وبدون علامة الدولار
-            console.log('📩 السعر من GMGN: ' + priceMatch[1]);
-            // حساب السعر الجديد بزيادة 1000%
-            const newPrice = (price * 10).toFixed(6);
-            // إرسال أمر التداول مباشرة
-            const orderMsg = `/create limitbuy ${token} 0.5@${newPrice} -exp 86400`;
-            await client.sendMessage(botUsername, { message: orderMsg });
-            console.log('✅ تم إرسال أمر التداول:', orderMsg);
-          } else {
-            // إذا لم يوجد سعر، اطبع الرسالة كاملة
-            console.log('📩 رسالة من GMGN:\n' + text);
-          }
-        }
-      }
-    };
-    client.addEventHandler(handler);
-    // انتظر حتى يتم استقبال السعر أو انتهاء المهلة
-    let tries = 0;
-    while (!done && tries < 10) {
-      await sleep(1000);
-      tries++;
-    }
-    client.removeEventHandler(handler);
-    if (!price) {
-      console.log('📩 رد البوت بعد ارسال التوكن:\n' + (lastBotMessage || 'لم يتم استقبال أي رسالة من البوت بعد إرسال التوكن'));
-      return;
-    }
-    // حساب السعر الجديد بزيادة 1000%
-    const newPrice = (price * 10).toFixed(6);
-    // إرسال أمر التداول
-    const orderMsg = `/create limitbuy ${token} 0.5@${newPrice} -exp 86400`;
-    await client.sendMessage(botUsername, { message: orderMsg });
-    console.log('✅ تم إرسال أمر التداول:', orderMsg);
-  } catch (err) {
-    console.error('❌ خطأ في التداول مع GMGN:', err.message);
-  }
-}
 
 // دالة تأخير بسيطة
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3100;
 http.createServer((req, res) => {
-  if (req.method === "POST" && req.url === "/delete-all") {
-    // مسح محتويات ملف السجلات
-    fs.writeFileSync('execution_logs.txt', '', 'utf8');
+  const url = new URL(req.url, `http://${req.headers.host}`);
+
+  if (url.pathname === '/search-token' && req.method === 'GET') {
+    const token = url.searchParams.get('token');
+
+    if (!token) {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('❌ يرجى تقديم اسم التوكن في الطلب.');
+      return;
+    }
+
+    const filePath = `${CONFIG_DIR}/${token}.txt`;
+
+    if (fs.existsSync(filePath)) {
+      const fileContent = fs.readFileSync(filePath, 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(fileContent);
+    } else {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('❌ الملف غير موجود.');
+    }
+  } else if (url.pathname === '/' && req.method === 'GET') {
+    // صفحة البحث عن التوكن
+    fs.readdir(CONFIG_DIR, (err, files) => {
+      if (err) {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('❌ حدث خطأ أثناء قراءة الملفات.');
+        return;
+      }
+
+      // تصفية الملفات الناجحة فقط
+      const successfulConfigs = files
+        .filter(file => file.endsWith('.txt') && file !== 'Buy_Token.txt')
+        .map(file => {
+          const filePath = `${CONFIG_DIR}/${file}`;
+          const content = fs.readFileSync(filePath, 'utf8');
+          if (content.includes('ناجح ✅️')) {
+            return file.replace('.txt', ''); // إزالة الامتداد
+          }
+          return null;
+        })
+        .filter(Boolean);
+
+      const configList = successfulConfigs
+        .map(token => `
+          <li>
+            ${token} 
+            <form method="POST" action="/sell" style="display:inline;">
+              <input type="hidden" name="token" value="${token}" />
+              <button type="submit" style="padding:5px 10px; font-size:0.9em;">SELL</button>
+            </form>
+          </li>
+        `)
+        .join('');
+
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`
+        <html>
+          <head>
+            <title>بحث عن التكوين</title>
+          </head>
+          <body style="text-align:center; font-family:Arial;">
+            <h1>🔍 البحث عن التكوين</h1>
+            <form method="GET" action="/search-token">
+              <input type="text" name="token" placeholder="أدخل اسم التوكن" required style="padding:10px; font-size:1em;" />
+              <button type="submit" style="padding:10px 20px; font-size:1em;">بحث</button>
+            </form>
+            <h2>✅ التكوينات الناجحة</h2>
+            <ul style="list-style:none; padding:0;">${configList}</ul>
+          </body>
+        </html>
+      `);
+    });
+  } else if (url.pathname === '/upload' && req.method === 'GET') {
+    // صفحة رفع الملفات
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`
+      <html>
+        <head>
+          <title>رفع ملفات التكوين</title>
+        </head>
+        <body style="text-align:center; font-family:Arial;">
+          <h1>📤 رفع ملفات التكوين</h1>
+          <form method="POST" action="/upload" enctype="multipart/form-data">
+            <input type="file" name="configFile" required style="padding:10px; font-size:1em;" />
+            <button type="submit" style="padding:10px 20px; font-size:1em;">رفع</button>
+          </form>
+        </body>
+      </html>
+    `);
+  } else if (url.pathname === '/upload' && req.method === 'POST') {
+    const form = new multer({ dest: 'uploads/' });
+    form.single('configFile')(req, res, (err) => {
+      if (err) {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('❌ حدث خطأ أثناء رفع الملف.');
+        return;
+      }
+
+      const uploadedFile = req.file;
+      if (uploadedFile) {
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end(`✅ تم رفع الملف بنجاح: ${uploadedFile.originalname}`);
+      } else {
+        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('❌ يرجى اختيار ملف لرفعه.');
+      }
+    });
+  } else if (url.pathname === '/files' && req.method === 'GET') {
+    // صفحة عرض الملفات المرفوعة
+    fs.readdir(CONFIG_DIR, (err, files) => {
+      if (err) {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('❌ حدث خطأ أثناء قراءة الملفات.');
+        return;
+      }
+
+      const fileLinks = files
+        .filter(file => file.endsWith('.txt'))
+        .map(file => `<li><a href="/files/${file}" target="_blank">${file}</a></li>`)
+        .join('');
+
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`
+        <html>
+          <head>
+            <title>الملفات المرفوعة</title>
+          </head>
+          <body style="text-align:center; font-family:Arial;">
+            <h1>📂 الملفات المرفوعة</h1>
+            <ul style="list-style:none; padding:0;">${fileLinks}</ul>
+            <a href="/upload" style="display:block; margin-top:20px;">🔙 العودة إلى صفحة الرفع</a>
+          </body>
+        </html>
+      `);
+    });
+  } else if (url.pathname.startsWith('/files/') && req.method === 'GET') {
+    // عرض محتوى ملف معين
+    const fileName = url.pathname.replace('/files/', '');
+    const filePath = `${CONFIG_DIR}/${fileName}`;
+
+    if (fs.existsSync(filePath)) {
+      const fileContent = fs.readFileSync(filePath, 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(fileContent);
+    } else {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('❌ الملف غير موجود.');
+    }
+  } else if (url.pathname === '/sell' && req.method === 'POST') {
+    // معالجة طلب SELL
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk.toString();
+    });
+    req.on('end', async () => {
+      const params = new URLSearchParams(body);
+      const token = params.get('token');
+
+      if (token) {
+        const sellCommand = `/sell ${token} 100%`;
+        fs.appendFileSync("Sell_Token.txt", `${sellCommand}\n`, 'utf8');
+
+        // إرسال الأمر إلى البوت
+        try {
+          await client.sendMessage("@GMGN_sol_bot", { message: sellCommand });
+          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end(`✅ تم إرسال أمر SELL للتكوين: ${token}`);
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end(`❌ حدث خطأ أثناء إرسال أمر SELL: ${err.message}`);
+        }
+      } else {
+        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('❌ لم يتم تقديم اسم التوكن.');
+      }
+    });
+  } else {
+    // صفحة الحالة الرئيسية
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(`
       <div style='text-align:center;'>
-        <div style='font-size:2em;'>🚀 تم مسح جميع السجلات بنجاح!</div>
-        <a href="/" style='font-size:1.5em; color:#0078D7;'>العودة إلى الصفحة الرئيسية</a>
+        <div style='font-size:2em;'>🚀 البوت يعمل الآن 24 ساعة على السيرفر!</div>
       </div>
     `);
-    return;
   }
-
-  // حساب عدد مرات الدخول والخروج خلال آخر 24 ساعة
-  let count = 0;
-  let executionLogs = '';
-  try {
-    const logFile = 'login_logout_log.txt';
-    if (fs.existsSync(logFile)) {
-      const logs = fs.readFileSync(logFile, 'utf8').split('\n').filter(Boolean);
-      const now = Date.now();
-      const oneDay = 24 * 60 * 60 * 1000;
-      count = logs.filter(line => {
-        const [, time] = line.split(',');
-        return now - new Date(time).getTime() <= oneDay;
-      }).length;
-    }
-
-    // قراءة السجلات الخاصة بوقت التنفيذ
-    const executionLogFile = 'execution_logs.txt';
-    if (fs.existsSync(executionLogFile)) {
-      executionLogs = fs.readFileSync(executionLogFile, 'utf8');
-    }
-  } catch {}
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  res.end(`
-    <div style='text-align:center;'>
-      <div style='font-size:2em;'>🚀 البوت يعمل الآن 24 ساعة على السيرفر!</div>
-      <div style='margin-top:20px; font-size:3em; color:#0078D7; font-weight:bold;'>عدد مرات تسجيل الدخول والخروج خلال 24 ساعة: ${count}</div>
-      <div style='margin-top:20px; font-size:1.5em; color:#333;'>
-        <h3>سجلات وقت التنفيذ:</h3>
-        <pre style='text-align:left;'>${executionLogs}</pre>
-      </div>
-      <form method="POST" action="/delete-all" style='margin-top:20px;'>
-        <button type="submit" style='font-size:1.5em; color:white; background-color:red; padding:10px 20px; border:none; cursor:pointer;'>Delete All</button>
-      </form>
-    </div>
-  `);
 }).listen(PORT, () => {
   console.log(`🌐 HTTP Server running on port ${PORT}`);
 });
@@ -283,20 +276,136 @@ process.on('SIGINT', () => {
   process.exit();
 });
 
-const sentTokensFile = 'sent_tokens.txt';
-let sentTokens = new Set();
-if (fs.existsSync(sentTokensFile)) {
-  const tokens = fs.readFileSync(sentTokensFile, 'utf8').split('\n').filter(Boolean);
-  sentTokens = new Set(tokens);
+// تعديل لجعل البحث يشمل جميع الرسائل الواردة
+const tokenData = {}; // تخزين بيانات التوكنات مؤقتًا
+
+client.addEventHandler(async (update) => {
+  try {
+    if (update.message && typeof update.message.message === "string") {
+      const msg = update.message;
+      const text = msg.message;
+
+      // التحقق من الرسائل التي تحتوي على "COUNTS: X"
+      const countMatch = text.match(/COUNTS:\s*(\d+)/i);
+      const tokenMatch = text.match(/ca:\s*([\w]+)/i);
+
+      if (countMatch && tokenMatch) {
+        const count = parseInt(countMatch[1], 10);
+        const token = tokenMatch[1];
+        const now = Date.now();
+
+        // إذا كانت الرسالة الأولى "COUNTS: 1"
+        if (count === 1) {
+          tokenData[token] = [{ count, timestamp: now }];
+          fs.writeFileSync(`${CONFIG_DIR}/${token}.txt`, `${token} : Counts: 1\n`, 'utf8');
+        } else if (tokenData[token]) {
+          // إذا كانت الرسالة تحتوي على "COUNTS: X" حيث X > 1
+          const previous = tokenData[token][tokenData[token].length - 1];
+          const timeDiff = Math.round((now - previous.timestamp) / 1000); // الفرق بالثواني
+
+          // تحديث البيانات وحفظها في الملف
+          tokenData[token].push({ count, timestamp: now });
+          fs.appendFileSync(
+            `${CONFIG_DIR}/${token}.txt`,
+            `Counts: ${count} To Counts: ${previous.count} = ${timeDiff}second\n`,
+            'utf8'
+          );
+
+          // التحقق عند الوصول إلى 10 فترات
+          if (tokenData[token].length === 10) {
+            const timeDiffs = tokenData[token].slice(1).map((entry, index) => {
+              return Math.round((entry.timestamp - tokenData[token][index].timestamp) / 1000);
+            });
+
+            const isSuccessful = timeDiffs.every(diff => diff >= 12 && diff <= 5000);
+
+            if (isSuccessful) {
+              fs.appendFileSync(`${CONFIG_DIR}/${token}.txt`, `ناجح ✅️\n`, 'utf8');
+              const buyCommand = `/buy ${token} 0.5`;
+              fs.appendFileSync("Buy_Token.txt", `${buyCommand}\n`, 'utf8');
+
+              // إرسال الأمر إلى البوت
+              await client.sendMessage("@GMGN_sol_bot", { message: buyCommand });
+            } else {
+              fs.appendFileSync(`${CONFIG_DIR}/${token}.txt`, `فاشل ❌️\n`, 'utf8');
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("❌ خطأ أثناء التوجيه:", err.message);
+  }
+});
+
+// وظيفة لحذف ملفات التكوين القديمة
+const DELETE_AFTER_HOURS = 48; // عدد الساعات قبل الحذف
+
+function deleteOldConfigFiles() {
+  const now = Date.now();
+  const deleteThreshold = DELETE_AFTER_HOURS * 60 * 60 * 1000; // تحويل الساعات إلى ميلي ثانية
+
+  fs.readdir(CONFIG_DIR, (err, files) => {
+    if (err) {
+      console.error("❌ خطأ أثناء قراءة الملفات:", err.message);
+      return;
+    }
+
+    files.forEach((file) => {
+      if (file.endsWith(".txt") && file !== "Buy_Token.txt") { // استهداف ملفات التكوين فقط
+        const filePath = `${CONFIG_DIR}/${file}`;
+        fs.stat(filePath, (err, stats) => {
+          if (err) {
+            console.error(`❌ خطأ أثناء فحص الملف ${file}:`, err.message);
+            return;
+          }
+
+          const fileAge = now - stats.mtimeMs; // حساب عمر الملف
+          if (fileAge > deleteThreshold) {
+            fs.unlink(filePath, (err) => {
+              if (err) {
+                console.error('خطأ أثناء حذف الملف:', file, err.message);
+              } else {
+                console.log('تم حذف الملف القديم:', file);
+              }
+            });
+          }
+        });
+      }
+    });
+  });
 }
 
-// تحسين الأداء عبر تقليل عمليات الإدخال/الإخراج (I/O) والكتابة المجمعة
-const executionLogsBuffer = [];
+// تشغيل وظيفة الحذف كل ساعة
+setInterval(function() {
+  deleteOldConfigFiles();
+}, 60 * 60 * 1000);
 
-// كتابة السجلات المجمعة إلى الملف بشكل دوري
-setInterval(() => {
-  if (executionLogsBuffer.length > 0) {
-    fs.appendFileSync('execution_logs.txt', executionLogsBuffer.join(''), 'utf8');
-    executionLogsBuffer.length = 0;
+// إنشاء مجلد configs إذا لم يكن موجودًا
+const CONFIG_DIR = `${__dirname}/configs`;
+if (!fs.existsSync(CONFIG_DIR)) {
+  fs.mkdirSync(CONFIG_DIR);
+}
+
+// نقل الملفات الحالية إلى مجلد configs
+fs.readdir(__dirname, (err, files) => {
+  if (err) {
+    console.error("❌ خطأ أثناء قراءة الملفات:", err.message);
+    return;
   }
-}, 5000); // كل 5 ثوانٍ
+
+  files.forEach((file) => {
+    if (file.endsWith(".txt") && file !== "Buy_Token.txt") {
+      const oldPath = `${__dirname}/${file}`;
+      const newPath = `${CONFIG_DIR}/${file}`;
+
+      fs.rename(oldPath, newPath, (err) => {
+        if (err) {
+          console.error(`❌ خطأ أثناء نقل الملف ${file}:`, err.message);
+        } else {
+          console.log(`✅ تم نقل الملف ${file} إلى المجلد configs.`);
+        }
+      });
+    }
+  });
+});
