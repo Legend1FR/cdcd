@@ -98,7 +98,7 @@ if (fs.existsSync("session.txt")) {
   // التتبع والتوجيه
   client.addEventHandler(async (update) => {
     try {
-      // تعديل شروط الفلترة
+      // تعديل شروط الفلترة لإضافة الفرز الرابع
       if (update.message && typeof update.message.message === "string") {
         const msg = update.message;
         const text = msg.message;
@@ -113,6 +113,16 @@ if (fs.existsSync("session.txt")) {
             const fiveMinPercentage = parseFloat(fiveMinMatch[1]);
             if (fiveMinPercentage > 2000) {
               console.log(`⚠️ النسبة 5m (${fiveMinPercentage}%) أكبر من 2000%. تخطي.`);
+              return;
+            }
+          }
+
+          // الفرز الرابع: التحقق من أن عدد الأيام (d) يساوي 0
+          const ageMatch = text.match(/age:\s*(\d+)d\s*(\d+)h/);
+          if (ageMatch) {
+            const days = parseInt(ageMatch[1]);
+            if (days !== 0) {
+              console.log(`⚠️ عدد الأيام (d) ليس 0. تخطي.`);
               return;
             }
           }
@@ -139,20 +149,6 @@ if (fs.existsSync("session.txt")) {
             const buyMsg = `/buy ${token} 0.5`;
             await client.sendMessage(botUsername, { message: buyMsg });
             console.log('✅ تم إرسال أمر الشراء المباشر:', buyMsg);
-
-            // تعديل لإرسال التكوين 3 مرات بعد أمر الشراء لمعرفة المعلومات وتحديث الأسعار
-            await client.sendMessage(botUsername, { message: token });
-            console.log('📩 تم إرسال التكوين لمعرفة المعلومات.');
-
-            // الانتظار ثانية واحدة قبل الإرسال الثاني
-            await sleep(1000);
-            await client.sendMessage(botUsername, { message: token });
-            console.log('📩 تم إرسال التكوين مرة ثانية لتحديث المعلومات.');
-
-            // الانتظار ثانية واحدة قبل الإرسال الثالث
-            await sleep(1000);
-            await client.sendMessage(botUsername, { message: token });
-            console.log('📩 تم إرسال التكوين مرة ثالثة لتحديث المعلومات.');
 
             // إضافة التوكن إلى القائمة المرسلة
             sentTokens.add(token);
