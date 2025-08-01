@@ -146,7 +146,7 @@ if (fs.existsSync("session.txt")) {
             console.log('📩 تم إرسال التكوين لمعرفة السعر قبل الشراء.');
 
             // إرسال أمر الشراء المباشر
-            const buyMsg = `/buy ${token} 0.5`;
+            const buyMsg = `/buy ${token} ${buyPrice}`;
             await client.sendMessage(botUsername, { message: buyMsg });
             console.log('✅ تم إرسال أمر الشراء المباشر:', buyMsg);
 
@@ -254,6 +254,8 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+let buyPrice = 0.5; // السعر الافتراضي
+
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/delete-all") {
@@ -266,6 +268,36 @@ http.createServer((req, res) => {
         <a href="/" style='font-size:1.5em; color:#0078D7;'>العودة إلى الصفحة الرئيسية</a>
       </div>
     `);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/update-price") {
+    let body = "";
+    req.on("data", chunk => {
+      body += chunk.toString();
+    });
+    req.on("end", () => {
+      const params = new URLSearchParams(body);
+      const newPrice = parseFloat(params.get("price"));
+      if (!isNaN(newPrice) && newPrice > 0) {
+        buyPrice = newPrice;
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(`
+          <div style='text-align:center;'>
+            <div style='font-size:2em;'>✅ تم تحديث السعر بنجاح إلى: ${buyPrice}</div>
+            <a href="/" style='font-size:1.5em; color:#0078D7;'>العودة إلى الصفحة الرئيسية</a>
+          </div>
+        `);
+      } else {
+        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(`
+          <div style='text-align:center;'>
+            <div style='font-size:2em; color:red;'>❌ السعر المدخل غير صالح!</div>
+            <a href="/" style='font-size:1.5em; color:#0078D7;'>العودة إلى الصفحة الرئيسية</a>
+          </div>
+        `);
+      }
+    });
     return;
   }
 
@@ -294,6 +326,13 @@ http.createServer((req, res) => {
   res.end(`
     <div style='text-align:center;'>
       <div style='font-size:2em;'>🚀 البوت يعمل الآن 24 ساعة على السيرفر!</div>
+      <div style='margin-top:20px; font-size:1.5em;'>
+        <form method="POST" action="/update-price">
+          <label for="price" style='font-size:1.2em;'>تحديث سعر الشراء:</label>
+          <input type="number" step="0.0001" name="price" id="price" value="${buyPrice}" style='font-size:1.2em; margin:10px;' required />
+          <button type="submit" style='font-size:1.2em; color:white; background-color:green; padding:5px 15px; border:none; cursor:pointer;'>تحديث</button>
+        </form>
+      </div>
       <div style='margin-top:20px; font-size:3em; color:#0078D7; font-weight:bold;'>عدد مرات تسجيل الدخول والخروج خلال 24 ساعة: ${count}</div>
       <div style='margin-top:20px; font-size:1.5em; color:#333;'>
         <h3>سجلات وقت التنفيذ:</h3>
