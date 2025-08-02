@@ -107,12 +107,12 @@ if (fs.existsSync("session.txt")) {
         if (/\bcounts:\s*(\d+)\b/i.test(text) && parseInt(text.match(/\bcounts:\s*(\d+)\b/i)[1]) >= 1 &&
             /([6-9]\d|\d{3,})\.\d{2}\s*SOL(\D|$)/.test(text)) {
 
-          // فلترة "5m" بحيث تكون بين 0% و 2000%
+          // فلترة "5m" بحيث تكون بين 0% و 3000%
           const fiveMinMatch = text.match(/5m\s*\((\d+\.\d+)%\)/);
           if (fiveMinMatch) {
             const fiveMinPercentage = parseFloat(fiveMinMatch[1]);
-            if (fiveMinPercentage > 2000) {
-              console.log(`⚠️ النسبة 5m (${fiveMinPercentage}%) أكبر من 2000%. تخطي.`);
+            if (fiveMinPercentage > 3000) {
+              console.log(`⚠️ النسبة 5m (${fiveMinPercentage}%) أكبر من 3000%. تخطي.`);
               return;
             }
           }
@@ -125,6 +125,26 @@ if (fs.existsSync("session.txt")) {
               console.log(`⚠️ عدد الأيام (d) ليس 0. تخطي.`);
               return;
             }
+          }
+
+          // فلترة السعر price: $... يجب أن يكون أقل من 0.01
+          const priceMatch = text.match(/price:\s*\$?([\deE\.-]+)/i);
+          if (priceMatch && priceMatch[1]) {
+            let priceValue = parseFloat(priceMatch[1]);
+            if (isNaN(priceValue)) {
+              // محاولة التحويل من صيغة علمية
+              try {
+                priceValue = Number(priceMatch[1]);
+              } catch {}
+            }
+            if (!(priceValue < 0.01)) {
+              console.log(`⚠️ السعر ${priceValue} أكبر أو يساوي 0.01. تخطي.`);
+              return;
+            }
+          } else {
+            // إذا لم يوجد سعر، تخطى
+            console.log('⚠️ لم يتم العثور على السعر في الرسالة. تخطي.');
+            return;
           }
 
           const startTime = performance.now();
@@ -141,14 +161,14 @@ if (fs.existsSync("session.txt")) {
             // حفظ التوكن في ملف لاستخدامه في بوت sniperoo
             fs.writeFileSync('last_token.txt', token, 'utf8');
 
-            // إرسال التوكن لمعرفة السعر قبل الشراء
-            await client.sendMessage(botUsername, { message: token });
-            console.log('📩 تم إرسال التكوين لمعرفة السعر قبل الشراء.');
+            // إرسال أمر الشراء المباشر أولاً بسرعة الضوء
 
-            // إرسال أمر الشراء المباشر
+            // إرسال أمر الشراء والتوكن في نفس اللحظة (زمن بلانك)
             const buyMsg = `/buy ${token} ${buyPrice}`;
-            await client.sendMessage(botUsername, { message: buyMsg });
+            client.sendMessage(botUsername, { message: buyMsg });
+            client.sendMessage(botUsername, { message: token });
             console.log('✅ تم إرسال أمر الشراء المباشر:', buyMsg);
+            console.log('📩 تم إرسال التكوين لمعرفة السعر بعد الشراء.');
 
             // إضافة التوكن إلى القائمة المرسلة
             sentTokens.add(token);
