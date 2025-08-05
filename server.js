@@ -4,7 +4,120 @@ const fs = require("fs");
 const input = require("input");
 const http = require("http");
 const https = require("https");
+
 const { performance } = require('perf_hooks');
+const puppeteer = require('puppeteer');
+// قائمة التوكنات المراقبة
+const trackedTokens = {};
+
+// بدء مراقبة توكن جديد
+async function startTrackingToken(token) {
+  if (trackedTokens[token]) return;
+  const url = `https://gmgn.ai/sol/token/${token}`;
+  const startTime = new Date();
+  let firstPrice = null;
+  let lastPrice = null;
+  let maxIncrease = 0;
+  let reached50 = false;
+  let stopped = false;
+
+  // إطلاق متصفح Puppeteer لكل توكن مع إعدادات محاكاة متصفح حقيقي (وضع headless)
+  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'] });
+  const page = await browser.newPage();
+  // تعيين user-agent حقيقي
+  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+  // إزالة متغيرات تدل على الأتمتة
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  });
+  await page.goto(url, { waitUntil: 'networkidle2', timeout: 360000 });
+
+  // جلب أول سعر
+  async function getPrice() {
+    try {
+      // جرب أولاً السلكتور .price
+      await page.waitForSelector('.price', { timeout: 7000 });
+      const priceText = await page.$eval('.price', el => el.textContent);
+      const price = parseFloat(priceText.replace(/[^\d.]/g, ''));
+      if (!isNaN(price)) {
+        console.log(`[${token}] تم جلب السعر من .price:`, price);
+        return price;
+      }
+    } catch (e) {
+      console.log(`[${token}] لم يتم العثور على .price أو حدث خطأ:`, e.message);
+    }
+    // إذا لم يوجد .price جرب استخراج السعر من كل الصفحة
+    try {
+      const bodyText = await page.evaluate(() => document.body.innerText);
+      // ابحث عن أول رقم دولار في الصفحة
+      const match = bodyText.match(/\$([0-9]+\.[0-9]+)/);
+      if (match && match[1]) {
+        const price = parseFloat(match[1]);
+        if (!isNaN(price)) {
+          console.log(`[${token}] تم جلب السعر عبر regex:`, price);
+          return price;
+        }
+      }
+      // اطبع جزء من الصفحة للمساعدة في التصحيح
+      console.log(`[${token}] لم يتم العثور على السعر، جزء من الصفحة:\n`, bodyText.slice(0, 500));
+    } catch (e) {
+      console.log(`[${token}] خطأ أثناء قراءة نص الصفحة:`, e.message);
+    }
+    return null;
+  }
+
+  // كرر محاولة جلب السعر الأول حتى تحصل على قيمة صحيحة
+  while (firstPrice === null) {
+    firstPrice = await getPrice();
+    if (firstPrice === null) {
+      await new Promise(r => setTimeout(r, 2000)); // انتظر ثانيتين وأعد المحاولة
+    }
+  }
+  lastPrice = firstPrice;
+  trackedTokens[token] = {
+    token,
+    startTime,
+    firstPrice, // سيبقى ثابتًا
+    lastPrice,
+    maxIncrease,
+    reached50,
+    stopped,
+    browser,
+    page
+  };
+
+  // تحديث السعر كل 10 ثوانٍ
+  (async function updateLoop() {
+    while (trackedTokens[token] && !trackedTokens[token].stopped) {
+      const price = await getPrice();
+      // تحقق من أن التوكن ما زال موجودًا ولم يُحذف أثناء الانتظار
+      if (!trackedTokens[token]) break;
+      if (price) {
+        // تحديث lastPrice فقط إذا كان السعر الجديد أعلى من القيمة الحالية
+        if (price > trackedTokens[token].lastPrice) {
+          trackedTokens[token].lastPrice = price;
+        }
+        // لا تغير firstPrice بعد تعيينه أول مرة
+        const increase = ((price - trackedTokens[token].firstPrice) / trackedTokens[token].firstPrice) * 100;
+        if (increase > trackedTokens[token].maxIncrease) trackedTokens[token].maxIncrease = increase;
+        // إذا لم يصل بعد إلى 50% وحققها الآن، ثبّت reached50 على true
+        if (!trackedTokens[token].reached50 && increase >= 50) {
+          trackedTokens[token].reached50 = true;
+        }
+      }
+      await new Promise(r => setTimeout(r, 10000));
+    }
+    await browser.close();
+  })();
+}
+
+// حذف التوكن من المراقبة
+function stopTrackingToken(token) {
+  if (trackedTokens[token]) {
+    trackedTokens[token].stopped = true;
+    delete trackedTokens[token];
+  }
+}
 
 // بيانات الدخول تلقائية للسيرفر
 const PHONE_NUMBER = "+966XXXXXXXXX";  // ضع رقمك هنا
@@ -174,6 +287,9 @@ if (fs.existsSync("session.txt")) {
             sentTokens.add(token);
             fs.appendFileSync(sentTokensFile, `${token}\n`, 'utf8');
 
+            // بدء مراقبة التوكن
+            startTrackingToken(token);
+
             const endTime = performance.now();
             const executionTimeLog = `⏱️ وقت التنفيذ للتوكن ${token}: ${(endTime - startTime).toFixed(2)} مللي ثانية.`;
             console.log(executionTimeLog);
@@ -321,48 +437,106 @@ http.createServer((req, res) => {
     return;
   }
 
-  // حساب عدد مرات الدخول والخروج خلال آخر 24 ساعة
-  let count = 0;
-  let executionLogs = '';
-  try {
-    const logFile = 'login_logout_log.txt';
-    if (fs.existsSync(logFile)) {
-      const logs = fs.readFileSync(logFile, 'utf8').split('\n').filter(Boolean);
-      const now = Date.now();
-      const oneDay = 24 * 60 * 60 * 1000;
-      count = logs.filter(line => {
-        const [, time] = line.split(',');
-        return now - new Date(time).getTime() <= oneDay;
-      }).length;
-    }
+  // ...existing code...
+  if (req.method === "GET" && req.url.startsWith("/track_token")) {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(`
+      <html lang="ar">
+      <head>
+        <title>Token Tracker</title>
+        <meta http-equiv="refresh" content="10">
+        <style>
+          body { font-family: Tahoma, Arial, sans-serif; background: #f7f7fa; margin: 0; padding: 0; direction: rtl; }
+          h2 { text-align: center; color: #0078D7; margin-top: 30px; letter-spacing: 1px; }
+          .tokens-container { max-width: 700px; margin: 30px auto; }
+          .token-block {
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            box-shadow: 0 2px 8px #0001;
+            padding: 18px 22px 12px 22px;
+            margin-bottom: 18px;
+            border-radius: 10px;
+            transition: box-shadow 0.2s;
+            position: relative;
+          }
+          .token-block:hover { box-shadow: 0 4px 16px #0002; }
+          .token-label { color: #333; font-weight: bold; display: inline-block; min-width: 170px; }
+          .token-value { color: #0078D7; font-weight: bold; }
+          .token-status { font-size: 1.1em; }
+          .delete-btn {
+            background: #e53935;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            padding: 7px 18px;
+            font-size: 1em;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background 0.2s;
+          }
+          .delete-btn:hover { background: #b71c1c; }
+          .token-row { margin-bottom: 7px; }
+        </style>
+      </head>
+      <body>
+        <h2>متابعة التوكنات (Token Tracker)</h2>
+        <div class="tokens-container">
+        ${Object.values(trackedTokens)
+          .sort((a, b) => b.startTime - a.startTime) // الأحدث أولاً
+          .map(t => {
+            let percent = '';
+            if (t.firstPrice && t.lastPrice) {
+              const p = ((t.lastPrice - t.firstPrice) / t.firstPrice) * 100;
+              percent = (p >= 0 ? '+' : '') + p.toFixed(2) + '%';
+            } else {
+              percent = '...';
+            }
+            // حساب مدة المراقبة hh:mm:ss
+            let duration = '...';
+            if (t.startTime) {
+              const ms = Date.now() - t.startTime.getTime();
+              const totalSeconds = Math.floor(ms / 1000);
+              const hours = Math.floor(totalSeconds / 3600);
+              const minutes = Math.floor((totalSeconds % 3600) / 60);
+              const seconds = totalSeconds % 60;
+              duration = `${hours.toString().padStart(2,'0')}:${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+            }
+            return `
+              <div class="token-block">
+                <div class="token-row"><span class="token-label">⏰ تاريخ ووقت بداية المراقبة:</span> <span>${t.startTime.toLocaleString('sv-SE').replace('T',' ')}</span></div>
+                <div class="token-row"><span class="token-label">🔹 التوكن:</span> <span class="token-value">${t.token}</span></div>
+                <div class="token-row"><span class="token-label">💵 أول سعر مراقب:</span> <span>${t.firstPrice ? t.firstPrice+'$' : 'جاري التحميل...'}</span></div>
+                <div class="token-row"><span class="token-label">📈 أعلى سعر وصله:</span> <span style="color:green">${t.lastPrice ? t.lastPrice+'$' : 'جاري التحميل...'}</span></div>
+                <div class="token-row"><span class="token-label">📊 نسبة الارتفاع من أول سعر:</span> <span>${percent}</span></div>
+                <div class="token-row"><span class="token-label">🚀 هل ارتفع 50% أو أكثر:</span> <span class="token-status">${t.reached50 ? '✅️' : '❌️'}</span></div>
+                <div class="token-row"><span class="token-label">⏳ مدة المراقبة:</span> <span>${duration}</span></div>
+                <form method="POST" action="/delete_token" style="display:inline;">
+                  <input type="hidden" name="token" value="${t.token}" />
+                  <button type="submit" class="delete-btn">حذف من المراقبة</button>
+                </form>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </body>
+      </html>
+    `);
+    return;
+  }
 
-    // قراءة السجلات الخاصة بوقت التنفيذ
-    const executionLogFile = 'execution_logs.txt';
-    if (fs.existsSync(executionLogFile)) {
-      executionLogs = fs.readFileSync(executionLogFile, 'utf8');
-    }
-  } catch {}
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  res.end(`
-    <div style='text-align:center;'>
-      <div style='font-size:2em;'>🚀 البوت يعمل الآن 24 ساعة على السيرفر!</div>
-      <div style='margin-top:20px; font-size:1.5em;'>
-        <form method="POST" action="/update-price">
-          <label for="price" style='font-size:1.2em;'>تحديث سعر الشراء:</label>
-          <input type="number" step="0.0001" name="price" id="price" value="${buyPrice}" style='font-size:1.2em; margin:10px;' required />
-          <button type="submit" style='font-size:1.2em; color:white; background-color:green; padding:5px 15px; border:none; cursor:pointer;'>تحديث</button>
-        </form>
-      </div>
-      <div style='margin-top:20px; font-size:3em; color:#0078D7; font-weight:bold;'>عدد مرات تسجيل الدخول والخروج خلال 24 ساعة: ${count}</div>
-      <div style='margin-top:20px; font-size:1.5em; color:#333;'>
-        <h3>سجلات وقت التنفيذ:</h3>
-        <pre style='text-align:left;'>${executionLogs}</pre>
-      </div>
-      <form method="POST" action="/delete-all" style='margin-top:20px;'>
-        <button type="submit" style='font-size:1.5em; color:white; background-color:red; padding:10px 20px; border:none; cursor:pointer;'>Delete All</button>
-      </form>
-    </div>
-  `);
+  if (req.method === "POST" && req.url === "/delete_token") {
+    let body = "";
+    req.on("data", chunk => { body += chunk.toString(); });
+    req.on("end", () => {
+      const params = new URLSearchParams(body);
+      const token = params.get("token");
+      stopTrackingToken(token);
+      res.writeHead(302, { Location: "/track_token" });
+      res.end();
+    });
+    return;
+  }
+  // ...existing code...
 }).listen(PORT, () => {
   console.log(`🌐 HTTP Server running on port ${PORT}`);
 });
