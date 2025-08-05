@@ -14,7 +14,7 @@ COPY package.json ./
 COPY package-lock.json ./
 
 # Install dependencies (and Chrome via postinstall)
-RUN npm install --omit=dev
+RUN npm install
 
 # Copy the rest of the app
 COPY . .
