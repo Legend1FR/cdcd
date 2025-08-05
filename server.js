@@ -7,7 +7,7 @@ const https = require("https");
 
 const { performance } = require('perf_hooks');
 const puppeteer = require('puppeteer');
-// قائمة التوكنات المراقبة
+
 const trackedTokens = {};
 
 // بدء مراقبة توكن جديد
@@ -576,3 +576,4 @@ setInterval(() => {
     executionLogsBuffer.length = 0;
   }
 }, 5000); // كل 5 ثوانٍ
+
