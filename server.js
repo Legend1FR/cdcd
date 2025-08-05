@@ -23,7 +23,7 @@ async function startTrackingToken(token) {
 
   // إطلاق متصفح Puppeteer لكل توكن مع إعدادات محاكاة متصفح حقيقي (وضع headless)
   const browser = await puppeteer.launch({
-    headless: true,
+    headless: false,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
