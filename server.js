@@ -21,12 +21,8 @@ async function startTrackingToken(token) {
   let reached50 = false;
   let stopped = false;
 
-  // إطلاق متصفح Puppeteer لكل توكن مع إعدادات محاكاة متصفح حقيقي
-  const browser = await puppeteer.launch({
-    headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable',
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
-  });
+  // إطلاق متصفح Puppeteer لكل توكن مع إعدادات محاكاة متصفح حقيقي (وضع headless)
+  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'] });
   const page = await browser.newPage();
   // تعيين user-agent حقيقي
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
