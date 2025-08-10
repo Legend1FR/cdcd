@@ -21,20 +21,74 @@ async function startTrackingToken(token) {
   let reached50 = false;
   let stopped = false;
 
-  // إطلاق متصفح Puppeteer لكل توكن مع إعدادات محاكاة متصفح حقيقي
-  const browser = await puppeteer.launch({
-    headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable',
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
-  });
-  const page = await browser.newPage();
-  // تعيين user-agent حقيقي
-  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-  // إزالة متغيرات تدل على الأتمتة
-  await page.evaluateOnNewDocument(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-  });
-  await page.goto(url, { waitUntil: 'networkidle2', timeout: 360000 });
+  let browser;
+  let page;
+  
+  try {
+    // إطلاق متصفح Puppeteer لكل توكن مع إعدادات محاكاة متصفح حقيقي
+    const launchOptions = {
+      headless: true,
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox', 
+        '--disable-blink-features=AutomationControlled',
+        '--disable-web-security',
+        '--disable-dev-shm-usage',
+        '--no-first-run',
+        '--disable-default-apps',
+        '--disable-extensions'
+      ]
+    };
+
+    // تحديد مسار Chrome بناءً على البيئة
+    const chromePaths = [
+      process.env.PUPPETEER_EXECUTABLE_PATH,
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/google-chrome',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/chromium'
+    ].filter(Boolean);
+
+    let browserLaunched = false;
+    
+    for (const chromePath of chromePaths) {
+      try {
+        launchOptions.executablePath = chromePath;
+        browser = await puppeteer.launch(launchOptions);
+        browserLaunched = true;
+        console.log(`[${token}] تم إطلاق المتصفح بنجاح باستخدام: ${chromePath}`);
+        break;
+      } catch (err) {
+        console.log(`[${token}] فشل في إطلاق المتصفح باستخدام ${chromePath}: ${err.message}`);
+      }
+    }
+
+    if (!browserLaunched) {
+      // محاولة إطلاق المتصفح بدون تحديد مسار (استخدام Chromium المدمج مع Puppeteer)
+      try {
+        delete launchOptions.executablePath;
+        browser = await puppeteer.launch(launchOptions);
+        browserLaunched = true;
+        console.log(`[${token}] تم إطلاق المتصفح المدمج مع Puppeteer بنجاح`);
+      } catch (err) {
+        console.error(`[${token}] فشل في إطلاق أي متصفح: ${err.message}`);
+        return;
+      }
+    }
+
+    page = await browser.newPage();
+    // تعيين user-agent حقيقي
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    // إزالة متغيرات تدل على الأتمتة
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    });
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 360000 });
+  } catch (error) {
+    console.error(`[${token}] خطأ في إعداد المتصفح: ${error.message}`);
+    if (browser) await browser.close();
+    return;
+  }
 
   // جلب أول سعر
   async function getPrice() {
@@ -71,11 +125,28 @@ async function startTrackingToken(token) {
   }
 
   // كرر محاولة جلب السعر الأول حتى تحصل على قيمة صحيحة
-  while (firstPrice === null) {
-    firstPrice = await getPrice();
-    if (firstPrice === null) {
-      await new Promise(r => setTimeout(r, 2000)); // انتظر ثانيتين وأعد المحاولة
+  let priceAttempts = 0;
+  const maxPriceAttempts = 10;
+  
+  while (firstPrice === null && priceAttempts < maxPriceAttempts) {
+    try {
+      firstPrice = await getPrice();
+      if (firstPrice === null) {
+        priceAttempts++;
+        console.log(`[${token}] محاولة ${priceAttempts}/${maxPriceAttempts} لجلب السعر...`);
+        await new Promise(r => setTimeout(r, 3000)); // انتظر 3 ثوانٍ وأعد المحاولة
+      }
+    } catch (error) {
+      priceAttempts++;
+      console.error(`[${token}] خطأ في محاولة ${priceAttempts}: ${error.message}`);
+      await new Promise(r => setTimeout(r, 3000));
     }
+  }
+
+  if (firstPrice === null) {
+    console.error(`[${token}] فشل في جلب السعر بعد ${maxPriceAttempts} محاولات. إيقاف المراقبة.`);
+    if (browser) await browser.close();
+    return;
   }
   lastPrice = firstPrice;
   trackedTokens[token] = {
@@ -396,8 +467,28 @@ function sleep(ms) {
 
 let buyPrice = 0.5; // السعر الافتراضي
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 http.createServer((req, res) => {
+  // Health check endpoint للتوافق مع Render
+  if (req.method === "GET" && req.url === "/health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "OK", timestamp: new Date().toISOString() }));
+    return;
+  }
+
+  // Root endpoint للتحقق من حالة البوت
+  if (req.method === "GET" && req.url === "/") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(`
+      <div style='text-align:center; font-family: Arial, sans-serif; padding: 50px;'>
+        <h1 style='color: #0078D7;'>🚀 البوت يعمل بنجاح!</h1>
+        <p style='font-size: 1.2em; color: #333;'>الوقت الحالي: ${new Date().toLocaleString('ar-SA')}</p>
+        <p><a href="/track_token" style='color: #0078D7; text-decoration: none;'>📊 متابعة التوكنات</a></p>
+      </div>
+    `);
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/delete-all") {
     // مسح محتويات ملف السجلات
     fs.writeFileSync('execution_logs.txt', '', 'utf8');
@@ -545,10 +636,11 @@ http.createServer((req, res) => {
   console.log(`🌐 HTTP Server running on port ${PORT}`);
 });
 
-const KEEP_ALIVE_URL = "https://cdcd.onrender.com/";
+// استخدام URL ديناميكي للـ keep-alive بناءً على البيئة
+const KEEP_ALIVE_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}` || "https://your-app-name.onrender.com/";
 setInterval(() => {
-  https.get(KEEP_ALIVE_URL, (res) => {
-    console.log(`🔄 Keep Alive Ping: ${KEEP_ALIVE_URL} - Status: ${res.statusCode}`);
+  https.get(KEEP_ALIVE_URL + "/health", (res) => {
+    console.log(`🔄 Keep Alive Ping: ${KEEP_ALIVE_URL}/health - Status: ${res.statusCode}`);
   }).on("error", (e) => {
     console.error(`❌ Keep Alive Error: ${e.message}`);
   });
