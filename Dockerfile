@@ -1,6 +1,6 @@
 # Use official Node.js LTS image
 
-FROM ghcr.io/puppeteer/puppeteer:24.14.0
+FROM node:22
 
 # تثبيت Google Chrome المناسب
 RUN apt-get update && \
