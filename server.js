@@ -10,7 +10,7 @@ const puppeteer = require('puppeteer');
 // قائمة التوكنات المراقبة
 const trackedTokens = {};
 
-
+// بدء مراقبة توكن جديد
 async function startTrackingToken(token) {
   if (trackedTokens[token]) return;
   const url = `https://gmgn.ai/sol/token/${token}`;
@@ -22,7 +22,11 @@ async function startTrackingToken(token) {
   let stopped = false;
 
   // إطلاق متصفح Puppeteer لكل توكن مع إعدادات محاكاة متصفح حقيقي
-  const browser = await puppeteer.launch({ headless: false, args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'] });
+  const browser = await puppeteer.launch({
+    headless: true,
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable',
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
+  });
   const page = await browser.newPage();
   // تعيين user-agent حقيقي
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -576,4 +580,3 @@ setInterval(() => {
     executionLogsBuffer.length = 0;
   }
 }, 5000); // كل 5 ثوانٍ
-
