@@ -10,7 +10,7 @@ const puppeteer = require('puppeteer');
 // قائمة التوكنات المراقبة
 const trackedTokens = {};
 
-// بدء مراقبة توكن جديد
+
 async function startTrackingToken(token) {
   if (trackedTokens[token]) return;
   const url = `https://gmgn.ai/sol/token/${token}`;
@@ -576,3 +576,4 @@ setInterval(() => {
     executionLogsBuffer.length = 0;
   }
 }, 5000); // كل 5 ثوانٍ
+
