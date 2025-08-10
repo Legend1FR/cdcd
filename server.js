@@ -24,7 +24,6 @@ async function startTrackingToken(token) {
   // إطلاق متصفح Puppeteer لكل توكن مع إعدادات محاكاة متصفح حقيقي
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable',
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
   });
   const page = await browser.newPage();
