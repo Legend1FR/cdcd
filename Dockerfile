@@ -1,7 +1,7 @@
 # Use official Node.js LTS image
 FROM node:22
 
-# تثبيت المتطلبات الأساسية وGoogle Chrome
+# تثبيت المتطلبات الأساسية
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -34,24 +34,24 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     --no-install-recommends
 
-# إضافة مفتاح Google وتثبيت Chrome (محدث للتوافق مع Render)
-RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/googlechrome-linux-keyring.gpg && \
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/googlechrome-linux-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
-    apt-get update && \
-    apt-get install -y google-chrome-stable --no-install-recommends && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# تثبيت Chrome باستخدام طريقة مختلفة للتوافق مع Render
+RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/googlechrome-linux-keyring.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/googlechrome-linux-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable --no-install-recommends \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# التحقق من تثبيت Chrome وتعيين متغيرات البيئة
-RUN which google-chrome-stable && google-chrome-stable --version
+# التحقق من وجود Chrome
+RUN google-chrome-stable --version || echo "Chrome not found, will use bundled Chromium"
 
-# إنشاء مستخدم غير root لتشغيل المتصفح
+# إنشاء مستخدم غير root
 RUN groupadd -r pptruser && useradd -r -g pptruser -G audio,video pptruser \
-    && mkdir -p /home/pptruser/Downloads \
+    && mkdir -p /home/pptruser/Downloads /home/pptruser/.cache \
     && chown -R pptruser:pptruser /home/pptruser
 
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false \
+    PUPPETEER_CACHE_DIR=/home/pptruser/.cache/puppeteer \
     NODE_ENV=production \
     PORT=10000
 
@@ -60,8 +60,10 @@ WORKDIR /usr/src/app
 # نسخ ملفات package.json أولاً لتحسين الكاش
 COPY package*.json ./
 
-# تثبيت التبعيات
-RUN npm ci --only=production && npm cache clean --force
+# تثبيت التبعيات وتحميل Chrome
+RUN npm ci --only=production \
+    && npx puppeteer browsers install chrome \
+    && npm cache clean --force
 
 # نسخ بقية الملفات
 COPY . .
