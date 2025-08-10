@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: telegram-bot
+    env: docker
+    repo: https://github.com/Legend1fr/fdfd.git
+    region: oregon
+    plan: starter
+    branch: master
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
+        value: "true"
+      - key: PUPPETEER_EXECUTABLE_PATH
+        value: "/usr/bin/google-chrome-stable"
+    buildCommand: npm ci --only=production
+    startCommand: node server.js
+    healthCheckPath: /
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
