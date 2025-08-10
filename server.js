@@ -51,28 +51,44 @@ async function startTrackingToken(token) {
 
     let browserLaunched = false;
     
+    // أولاً: محاولة استخدام Chrome المثبت على النظام
     for (const chromePath of chromePaths) {
       try {
-        launchOptions.executablePath = chromePath;
-        browser = await puppeteer.launch(launchOptions);
-        browserLaunched = true;
-        console.log(`[${token}] تم إطلاق المتصفح بنجاح باستخدام: ${chromePath}`);
-        break;
+        const fs = require('fs');
+        if (fs.existsSync(chromePath)) {
+          launchOptions.executablePath = chromePath;
+          browser = await puppeteer.launch(launchOptions);
+          browserLaunched = true;
+          console.log(`[${token}] تم إطلاق المتصفح بنجاح باستخدام: ${chromePath}`);
+          break;
+        }
       } catch (err) {
         console.log(`[${token}] فشل في إطلاق المتصفح باستخدام ${chromePath}: ${err.message}`);
       }
     }
 
+    // ثانياً: محاولة استخدام Chromium المدمج مع Puppeteer
     if (!browserLaunched) {
-      // محاولة إطلاق المتصفح بدون تحديد مسار (استخدام Chromium المدمج مع Puppeteer)
       try {
         delete launchOptions.executablePath;
         browser = await puppeteer.launch(launchOptions);
         browserLaunched = true;
         console.log(`[${token}] تم إطلاق المتصفح المدمج مع Puppeteer بنجاح`);
       } catch (err) {
-        console.error(`[${token}] فشل في إطلاق أي متصفح: ${err.message}`);
-        return;
+        console.error(`[${token}] فشل في إطلاق Chromium المدمج: ${err.message}`);
+        
+        // ثالثاً: محاولة أخيرة مع إعدادات مبسطة
+        try {
+          browser = await puppeteer.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+          });
+          browserLaunched = true;
+          console.log(`[${token}] تم إطلاق المتصفح بإعدادات مبسطة`);
+        } catch (finalErr) {
+          console.error(`[${token}] فشل نهائياً في إطلاق أي متصفح: ${finalErr.message}`);
+          return;
+        }
       }
     }
 
@@ -362,8 +378,10 @@ if (fs.existsSync("session.txt")) {
             sentTokens.add(token);
             fs.appendFileSync(sentTokensFile, `${token}\n`, 'utf8');
 
-            // بدء مراقبة التوكن
-            startTrackingToken(token);
+            // بدء مراقبة التوكن (مع معالجة الأخطاء)
+            startTrackingToken(token).catch(err => {
+              console.error(`[${token}] خطأ في بدء المراقبة: ${err.message}`);
+            });
 
             const endTime = performance.now();
             const executionTimeLog = `⏱️ وقت التنفيذ للتوكن ${token}: ${(endTime - startTime).toFixed(2)} مللي ثانية.`;
@@ -468,7 +486,7 @@ function sleep(ms) {
 let buyPrice = 0.5; // السعر الافتراضي
 
 const PORT = process.env.PORT || 10000;
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
   // Health check endpoint للتوافق مع Render
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -632,15 +650,19 @@ http.createServer((req, res) => {
     return;
   }
   // ...existing code...
-}).listen(PORT, () => {
+}).listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 HTTP Server running on port ${PORT}`);
+  console.log(`🌍 Server accessible at: http://0.0.0.0:${PORT}`);
 });
 
 // استخدام URL ديناميكي للـ keep-alive بناءً على البيئة
-const KEEP_ALIVE_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}` || "https://your-app-name.onrender.com/";
+const KEEP_ALIVE_URL = process.env.RENDER_EXTERNAL_URL || "https://cdcd.onrender.com";
 setInterval(() => {
-  https.get(KEEP_ALIVE_URL + "/health", (res) => {
-    console.log(`🔄 Keep Alive Ping: ${KEEP_ALIVE_URL}/health - Status: ${res.statusCode}`);
+  const targetUrl = KEEP_ALIVE_URL + "/health";
+  const protocol = targetUrl.startsWith('https://') ? https : http;
+  
+  protocol.get(targetUrl, (res) => {
+    console.log(`🔄 Keep Alive Ping: ${targetUrl} - Status: ${res.statusCode}`);
   }).on("error", (e) => {
     console.error(`❌ Keep Alive Error: ${e.message}`);
   });
