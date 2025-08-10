@@ -21,16 +21,8 @@ async function startTrackingToken(token) {
   let reached50 = false;
   let stopped = false;
 
-  // إطلاق متصفح Puppeteer لكل توكن مع إعدادات محاكاة متصفح حقيقي (وضع headless)
-  const browser = await puppeteer.launch({
-    headless: false,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-blink-features=AutomationControlled'
-    ],
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
-  });
+  // إطلاق متصفح Puppeteer لكل توكن مع إعدادات محاكاة متصفح حقيقي
+  const browser = await puppeteer.launch({ headless: false, args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'] });
   const page = await browser.newPage();
   // تعيين user-agent حقيقي
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -400,7 +392,7 @@ function sleep(ms) {
 
 let buyPrice = 0.5; // السعر الافتراضي
 
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/delete-all") {
     // مسح محتويات ملف السجلات
